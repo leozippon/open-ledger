@@ -1,15 +1,18 @@
 # 记账
 
-Self-hosted ledger for a household or one person.
+- 多用户：一家人共用一份账目，每笔能看出是谁记的，也可以标成共同账。管理员负责成员和密码。
+- 灵活分类：分类可改图标、颜色、归档和顺序；支出和收入挂在活动上。
+- 支持多国银行卡：银行卡按币种记余额，支持银联、Visa、Mastercard、运通。
 
 一个 Go 静态二进制，自带网页和 SQLite，监听一个端口就能跑。界面按手机浏览器设计，也可以加到主屏。页面不加载任何外部资源；不配置识别密钥时，完全离线也能用。
 
-全家共用一份账目。每笔记录保留是谁记的，也可以标成共同账。管理员负责成员和密码。
-
 <p align="center">
-  <img src="docs/screenshots/ledger.png" alt="账本明细" width="320">
-  <img src="docs/screenshots/stats.png" alt="统计" width="320">
-  <img src="docs/screenshots/entry.png" alt="记一笔" width="320">
+  <img src="docs/screenshots/ledger.png" alt="账本" width="46%">
+  <img src="docs/screenshots/stats.png" alt="统计" width="46%">
+</p>
+<p align="center">
+  <img src="docs/screenshots/entry.png" alt="记一笔" width="46%">
+  <img src="docs/screenshots/settings.png" alt="我的" width="46%">
 </p>
 
 ## 本地运行
@@ -94,3 +97,7 @@ systemctl start ledger
 ## 许可
 
 MIT
+
+## AI 使用声明
+
+目前是 Vibe Coding 项目。仓库全部由 Cursor Grok 4.6 + Cursor Harness 生成。
