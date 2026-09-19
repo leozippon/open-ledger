@@ -73,7 +73,7 @@ func seed(st *store.Store) error {
 		return err
 	}
 	trip, err := st.CreateActivity(store.Activity{
-		Name: "日本旅行", Budget: 800000, TotalBudget: 2000000,
+		Name: "香港旅行", Budget: 800000, TotalBudget: 2000000,
 	})
 	if err != nil {
 		return err
@@ -120,8 +120,8 @@ func seed(st *store.Store) error {
 		{store.KindIncome, "2026-08-20", "周末兼职", 300000, side, daily.ID, credit.ID, zhou.ID, false},
 		{store.KindExpense, "2026-08-01", "房租", 320000, home, daily.ID, debit.ID, chen.ID, true},
 		{store.KindExpense, "2026-08-02", "机票", 89000, transit, trip.ID, credit.ID, chen.ID, true},
-		{store.KindExpense, "2026-08-03", "寿喜烧", 32000, food, trip.ID, credit.ID, chen.ID, false},
-		{store.KindExpense, "2026-08-05", "伴手礼", 56000, shop, trip.ID, credit.ID, zhou.ID, true},
+		{store.KindExpense, "2026-08-03", "茶餐厅", 32000, food, trip.ID, credit.ID, chen.ID, false},
+		{store.KindExpense, "2026-08-05", "手信", 56000, shop, trip.ID, credit.ID, zhou.ID, true},
 		{store.KindExpense, "2026-08-06", "便利店", 4500, food, daily.ID, debit.ID, chen.ID, false},
 		{store.KindIncome, "2026-09-05", "九月工资", 1800000, wage, daily.ID, debit.ID, chen.ID, false},
 		{store.KindExpense, "2026-09-01", "房租", 320000, home, daily.ID, debit.ID, chen.ID, true},
