@@ -96,6 +96,13 @@ func seed(st *store.Store) error {
 	if err != nil {
 		return err
 	}
+	pulse, err := st.CreateCard(store.Card{
+		Kind: store.CardCredit, Bank: "汇丰香港", Name: "Pulse", Last4: "6688", Network: store.NetworkVisa,
+		Funds: []store.CardFund{{Currency: "HKD", Balance: 852000}},
+	})
+	if err != nil {
+		return err
+	}
 
 	type row struct {
 		kind, date, note string
@@ -104,38 +111,46 @@ func seed(st *store.Store) error {
 		card             int64
 		user             int64
 		shared           bool
+		currency         string
 	}
 	food, transit, shop := cat["expense:餐饮"], cat["expense:交通"], cat["expense:购物"]
 	home, play, phone := cat["expense:居住"], cat["expense:娱乐"], cat["expense:通讯"]
 	wage, side := cat["income:工资"], cat["income:兼职"]
 	bills := []row{
-		{store.KindIncome, "2026-07-05", "七月工资", 1800000, wage, daily.ID, debit.ID, chen.ID, false},
-		{store.KindExpense, "2026-07-01", "房租", 320000, home, daily.ID, debit.ID, chen.ID, true},
-		{store.KindExpense, "2026-07-06", "午饭", 8600, food, daily.ID, debit.ID, chen.ID, false},
-		{store.KindExpense, "2026-07-06", "咖啡", 4200, food, daily.ID, credit.ID, zhou.ID, false},
-		{store.KindExpense, "2026-07-08", "地铁", 1800, transit, daily.ID, debit.ID, chen.ID, false},
-		{store.KindExpense, "2026-07-12", "日用品", 25600, shop, daily.ID, credit.ID, zhou.ID, false},
-		{store.KindExpense, "2026-07-15", "话费", 3900, phone, daily.ID, debit.ID, chen.ID, false},
-		{store.KindIncome, "2026-08-05", "八月工资", 1800000, wage, daily.ID, debit.ID, chen.ID, false},
-		{store.KindIncome, "2026-08-20", "周末兼职", 300000, side, daily.ID, credit.ID, zhou.ID, false},
-		{store.KindExpense, "2026-08-01", "房租", 320000, home, daily.ID, debit.ID, chen.ID, true},
-		{store.KindExpense, "2026-08-02", "机票", 89000, transit, trip.ID, credit.ID, chen.ID, true},
-		{store.KindExpense, "2026-08-03", "茶餐厅", 32000, food, trip.ID, credit.ID, chen.ID, false},
-		{store.KindExpense, "2026-08-05", "手信", 56000, shop, trip.ID, credit.ID, zhou.ID, true},
-		{store.KindExpense, "2026-08-06", "便利店", 4500, food, daily.ID, debit.ID, chen.ID, false},
-		{store.KindIncome, "2026-09-05", "九月工资", 1800000, wage, daily.ID, debit.ID, chen.ID, false},
-		{store.KindExpense, "2026-09-01", "房租", 320000, home, daily.ID, debit.ID, chen.ID, true},
-		{store.KindExpense, "2026-09-10", "洗衣液", 8900, shop, daily.ID, debit.ID, chen.ID, false},
-		{store.KindExpense, "2026-09-12", "电影", 12800, play, daily.ID, credit.ID, zhou.ID, true},
-		{store.KindExpense, "2026-09-18", "早午饭", 6800, food, daily.ID, debit.ID, chen.ID, false},
-		{store.KindExpense, "2026-09-18", "地铁", 1800, transit, daily.ID, debit.ID, zhou.ID, false},
-		{store.KindExpense, "2026-09-19", "晚餐", 5200, food, daily.ID, credit.ID, zhou.ID, false},
+		{store.KindIncome, "2026-07-05", "七月工资", 1800000, wage, daily.ID, debit.ID, chen.ID, false, ""},
+		{store.KindExpense, "2026-07-01", "房租", 320000, home, daily.ID, debit.ID, chen.ID, true, ""},
+		{store.KindExpense, "2026-07-06", "午饭", 8600, food, daily.ID, debit.ID, chen.ID, false, ""},
+		{store.KindExpense, "2026-07-06", "咖啡", 4200, food, daily.ID, credit.ID, zhou.ID, false, ""},
+		{store.KindExpense, "2026-07-08", "地铁", 1800, transit, daily.ID, debit.ID, chen.ID, false, ""},
+		{store.KindExpense, "2026-07-12", "日用品", 25600, shop, daily.ID, credit.ID, zhou.ID, false, ""},
+		{store.KindExpense, "2026-07-15", "话费", 3900, phone, daily.ID, debit.ID, chen.ID, false, ""},
+		{store.KindIncome, "2026-08-05", "八月工资", 1800000, wage, daily.ID, debit.ID, chen.ID, false, ""},
+		{store.KindIncome, "2026-08-20", "周末兼职", 300000, side, daily.ID, credit.ID, zhou.ID, false, ""},
+		{store.KindExpense, "2026-08-01", "房租", 320000, home, daily.ID, debit.ID, chen.ID, true, ""},
+		{store.KindExpense, "2026-08-02", "机票", 89000, transit, trip.ID, credit.ID, chen.ID, true, ""},
+		{store.KindExpense, "2026-08-03", "茶餐厅", 32000, food, trip.ID, credit.ID, chen.ID, false, ""},
+		{store.KindExpense, "2026-08-04", "港铁", 2800, transit, trip.ID, pulse.ID, zhou.ID, false, "HKD"},
+		{store.KindExpense, "2026-08-05", "手信", 56000, shop, trip.ID, credit.ID, zhou.ID, true, ""},
+		{store.KindExpense, "2026-08-06", "便利店", 4500, food, daily.ID, debit.ID, chen.ID, false, ""},
+		{store.KindIncome, "2026-09-05", "九月工资", 1800000, wage, daily.ID, debit.ID, chen.ID, false, ""},
+		{store.KindExpense, "2026-09-01", "房租", 320000, home, daily.ID, debit.ID, chen.ID, true, ""},
+		{store.KindExpense, "2026-09-07", "茶餐厅", 16800, food, trip.ID, pulse.ID, chen.ID, true, "HKD"},
+		{store.KindExpense, "2026-09-08", "港铁", 1800, transit, trip.ID, pulse.ID, chen.ID, false, "HKD"},
+		{store.KindExpense, "2026-09-10", "洗衣液", 8900, shop, daily.ID, debit.ID, chen.ID, false, ""},
+		{store.KindExpense, "2026-09-12", "电影", 12800, play, daily.ID, credit.ID, zhou.ID, true, ""},
+		{store.KindExpense, "2026-09-18", "早午饭", 6800, food, daily.ID, debit.ID, chen.ID, false, ""},
+		{store.KindExpense, "2026-09-18", "地铁", 1800, transit, daily.ID, debit.ID, zhou.ID, false, ""},
+		{store.KindExpense, "2026-09-19", "晚餐", 5200, food, daily.ID, credit.ID, zhou.ID, false, ""},
 	}
 	for _, item := range bills {
+		currency := item.currency
+		if currency == "" {
+			currency = "CNY"
+		}
 		if _, err := st.CreateTransaction(store.TxInput{
 			Kind: item.kind, Amount: item.amount, CategoryID: item.cat, ActivityID: item.act,
 			CardID: item.card, UserID: item.user, Date: item.date, Note: item.note,
-			Shared: item.shared, Currency: "CNY",
+			Shared: item.shared, Currency: currency,
 		}); err != nil {
 			return fmt.Errorf("%s %s: %w", item.date, item.note, err)
 		}
