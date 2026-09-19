@@ -7,6 +7,8 @@
 - 支持多国银行卡：按币种记余额，银联、Visa、Mastercard、运通都能用。
 - AI 自动识别：粘贴银行短信或拍一张单，自动填好金额和分类。
 
+在 iPhone 上用 Safari 打开账本，点底部分享，再点「添加到主屏幕」。之后从桌面图标进去，没有浏览器地址栏，底栏就是账本和记一笔，少绕一层。
+
 界面按手机设计。页面不加载任何外部资源；不配识别密钥时，完全离线也能用。
 
 ## 界面
@@ -15,9 +17,9 @@
 
 <p align="center"><img src="docs/screenshots/ledger.png" alt="账本" width="320"></p>
 
-银行短信可以贴进来自动入账，也可以拍照识图。
+配了识别密钥后，账本上会出现「短信」和「识图」。
 
-<p align="center"><img src="docs/screenshots/sms.png" alt="短信识别" width="320"></p>
+<p align="center"><img src="docs/screenshots/recognize.png" alt="短信和识图" width="92%"></p>
 
 点开余额，按币种看每张卡还剩多少。
 
@@ -66,8 +68,6 @@ make demo
 会写入两名演示成员和几个月的模拟账单，然后启动。登录是 `小陈` / `demodemo`，另一位是 `小周` / `demodemo`。空库启动用 `make run`。
 
 演示默认不打开识别。自己跑的时候加上识别密钥，账本上就会出现「短信」和「识图」。
-
-在 iPhone 上用 Safari 打开账本，点底部分享，再点「添加到主屏幕」。之后从桌面图标进去，没有浏览器地址栏，底栏就是账本和记一笔，少绕一层。
 
 ## 自己跑
 
