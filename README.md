@@ -1,90 +1,94 @@
 # 记账
 
-- 多用户：一家人共用一份账目，每笔能看出是谁记的，也可以标成共同账。管理员负责成员和密码。
+一家人一本账。多用户、分类和活动都能改，银行卡按币种记，短信或照片也能自动入账。
+
+- 多用户：每笔能看出是谁记的，也可以记入共同账。管理员管成员和密码。
 - 灵活分类：分类可改图标、颜色、归档和顺序；支出和收入挂在活动上。
-- 支持多国银行卡：银行卡按币种记余额，支持银联、Visa、Mastercard、运通。
+- 支持多国银行卡：按币种记余额，银联、Visa、Mastercard、运通都能用。
+- AI 自动识别：粘贴银行短信或拍一张单，自动填好金额和分类。
 
-一个 Go 静态二进制，自带网页和 SQLite，监听一个端口就能跑。界面按手机浏览器设计，也可以加到主屏。页面不加载任何外部资源；不配置识别密钥时，完全离线也能用。
+界面按手机设计。页面不加载任何外部资源；不配识别密钥时，完全离线也能用。
 
-<p align="center">
-  <img src="docs/screenshots/ledger.png" alt="账本" width="46%">
-  <img src="docs/screenshots/stats.png" alt="统计" width="46%">
-</p>
-<p align="center">
-  <img src="docs/screenshots/entry.png" alt="记一笔" width="46%">
-  <img src="docs/screenshots/settings.png" alt="我的" width="46%">
-</p>
+## 界面
 
-## 本地运行
+账本首页是余额和这个月的活动。配了识别密钥后，上面还会出现短信和识图。
 
-需要 Go 1.27 以上。
+<p align="center"><img src="docs/screenshots/ledger.png" alt="账本" width="320"></p>
+
+银行短信可以贴进来自动入账，也可以拍照识图。
+
+<p align="center"><img src="docs/screenshots/sms.png" alt="短信识别" width="320"></p>
+
+点开余额，按币种看每张卡还剩多少。
+
+<p align="center"><img src="docs/screenshots/balances.png" alt="余额" width="320"></p>
+
+点开活动，能看结余、上限和最近几笔，点进去就能改。
+
+<p align="center"><img src="docs/screenshots/activity.png" alt="活动详情" width="320"></p>
+
+右上角可以按备注搜索全部时间的账。
+
+<p align="center"><img src="docs/screenshots/search.png" alt="搜索" width="320"></p>
+
+统计按账本、活动和时间筛选，有分类环和银行汇总。
+
+<p align="center"><img src="docs/screenshots/stats.png" alt="统计" width="320"></p>
+
+记一笔用自定义数字键盘。支出和收入挂活动，转账和兑换不算收支。
+
+<p align="center"><img src="docs/screenshots/entry.png" alt="记一笔" width="320"></p>
+
+「我的」里管自己、家庭成员，以及分类、银行卡和活动。
+
+<p align="center"><img src="docs/screenshots/settings.png" alt="我的" width="320"></p>
+
+分类可以改图标和颜色，也能拖顺序。
+
+<p align="center"><img src="docs/screenshots/categories.png" alt="分类管理" width="320"></p>
+
+银行卡按币种记余额。
+
+<p align="center"><img src="docs/screenshots/cards.png" alt="银行卡" width="320"></p>
+
+活动可以设每月上限和整个活动的上限。上限看全家支出，不按账本拆分。
+
+<p align="center"><img src="docs/screenshots/activities.png" alt="活动" width="320"></p>
+
+## 使用
+
+本机需要 Go 1.27。
 
 ```
-make demo         # 写入两名演示成员和几个月的模拟账单，然后启动
-make test         # go vet + go test
-make build-linux  # 交叉编译出 dist/ledger-linux-amd64
+make demo
 ```
 
-演示账本的登录是 `小陈` / `demodemo`，另一位成员是 `小周` / `demodemo`。空库启动用 `make run`，会按环境变量创建第一个管理员。
+会写入两名演示成员和几个月的模拟账单，然后启动。登录是 `小陈` / `demodemo`，另一位是 `小周` / `demodemo`。空库启动用 `make run`。
 
-## 它做什么
+演示默认不打开识别。自己跑的时候加上识别密钥，账本上就会出现「短信」和「识图」。
 
-- 底栏三个入口：账本、记一笔、我的。金额用自定义数字键盘。
-- 支出和收入挂在活动上，默认是「日常生活」；转账和兑换不算收支。
-- 两名以上成员时，可以记入共同账。共同是单独一本账，不拆给各人。
-- 账本首页是余额和本月有账单的活动；点开看结余和最近几笔，可以直接改。
-- 统计按账本、活动和时间（月 / 年 / 全部）筛选，有分类环、银行汇总和走势。
-- 银行卡按币种记余额，支持银联、Visa、Mastercard、运通；可以转账和手填兑换，不存汇率。
-- 活动可以设每月上限和活动上限。上限看全家支出，不按账本拆分。
-- 分类可改图标、颜色、归档和顺序。账目可导出 CSV。
+在 iPhone 上用 Safari 打开账本，点底部分享，再点「添加到主屏幕」。之后从桌面图标进去，没有浏览器地址栏，底栏就是账本和记一笔，少绕一层。
 
-## 配置
+## 自己跑
 
-全部通过环境变量设置。服务器上这些变量放在 `/etc/ledger/env`。
+一个 Go 程序，网页和 SQLite 都打在二进制里，监听一个端口就能用。配置都走环境变量，服务器上放在 `/etc/ledger/env`。
 
-| 变量 | 默认值 | 说明 |
+| 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `LEDGER_ADDR` | `:18080` | 监听地址 |
-| `LEDGER_DB` | `ledger.db` | SQLite 文件路径 |
-| `LEDGER_ADMIN_USER` | `admin` | 首个管理员的用户名 |
-| `LEDGER_ADMIN_PASSWORD` | 无 | 首个管理员的密码，至少 8 位 |
-| `LEDGER_SECRET` | 无 | 会话 cookie 的签名密钥，至少 16 个字符 |
-| `LEDGER_TLS_CERT` | 无 | HTTPS 证书路径 |
-| `LEDGER_TLS_KEY` | 无 | HTTPS 私钥路径 |
-| `LEDGER_DEEPSEEK_KEY` | 无 | DeepSeek API 密钥；留空则不出现识别入口 |
-| `LEDGER_DEEPSEEK_URL` | `https://api.deepseek.com` | DeepSeek API 地址 |
+| `LEDGER_DB` | `ledger.db` | SQLite 路径 |
+| `LEDGER_ADMIN_USER` | `admin` | 首个管理员 |
+| `LEDGER_ADMIN_PASSWORD` | 无 | 首个管理员密码，至少 8 位 |
+| `LEDGER_SECRET` | 无 | 会话签名密钥，至少 16 个字符 |
+| `LEDGER_TLS_CERT` / `LEDGER_TLS_KEY` | 无 | 成对填写才启用 HTTPS |
+| `LEDGER_DEEPSEEK_KEY` | 无 | 识别密钥；留空则不出现入口 |
+| `LEDGER_DEEPSEEK_URL` | `https://api.deepseek.com` | 识别接口地址 |
 
-`LEDGER_ADMIN_USER` 和 `LEDGER_ADMIN_PASSWORD` 只在库里还没有成员时使用。`LEDGER_SECRET` 留空会每次启动随机生成，登录状态会在重启后失效。证书成对填写才启用 HTTPS。
+用户名和密码只在库里还没有成员时用。密钥留空会每次随机，重启后要重新登录。识别密钥只留在服务器上，只有成员主动点「短信」或「识图」才会把这段内容发出去。
 
-识别密钥只留在服务器环境变量里。只有成员主动点「短信」或「识图」才会把这段内容发到 DeepSeek。
+放到服务器上，仓库里有 Debian 13 的安装脚本，以及从本机编译推送的脚本。配好 SSH 别名后，先跑一次 `deploy/server/provision.sh`，之后更新再跑 `deploy/deploy.sh your-server`。两个脚本都可以重复执行，安装脚本不会覆盖已有的配置、证书和数据库。
 
-## 部署
-
-`deploy/server/provision.sh` 把一台 Debian 13 机器收成能跑账本的样子；`deploy/deploy.sh` 从本机编译并推送。两个脚本都可以重复执行，provision 不会覆盖已有的 `/etc/ledger/env`、证书和数据库。
-
-先在 `~/.ssh/config` 里给服务器起个别名：
-
-```
-Host your-server
-    HostName 203.0.113.10
-    User root
-    IdentityFile ~/.ssh/id_ed25519
-    IdentitiesOnly yes
-```
-
-```
-scp -r deploy/server your-server:/root/
-ssh your-server 'bash /root/server/provision.sh --hostname your-server --public-ip 203.0.113.10 --admin-user 你的用户名'
-deploy/deploy.sh your-server
-```
-
-自签名证书第一次打开会提示警告。日常更新再跑一次 `deploy/deploy.sh your-server`。
-
-登录失败会写固定格式的日志，交给 fail2ban 封禁；程序自己还有一层 10 分钟 5 次的节流。
-
-## 备份
-
-数据在一个 SQLite 文件里。开了 WAL，复制前先停服务：
+数据在一个 SQLite 文件里。开了 WAL，复制前先停服务；也可以在「我的」里导出 CSV。
 
 ```
 systemctl stop ledger
@@ -92,7 +96,7 @@ cp /var/lib/ledger/ledger.db ~/ledger-$(date +%F).db
 systemctl start ledger
 ```
 
-也可以在「我的」里导出 CSV。
+`make test` 跑检查，`make build-linux` 交叉编译。
 
 ## 许可
 
