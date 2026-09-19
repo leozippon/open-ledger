@@ -1,0 +1,5 @@
+// Let unattended-upgrades apply security updates on its own.
+// Installed by provision.sh as /etc/apt/apt.conf.d/20auto-upgrades.
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";

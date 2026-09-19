@@ -1,0 +1,31 @@
+[Unit]
+Description=Ledger personal bookkeeping
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ledger
+Group=ledger
+WorkingDirectory=/var/lib/ledger
+EnvironmentFile=/etc/ledger/env
+Environment=TZ=Asia/Shanghai
+ExecStart=/usr/local/bin/ledger
+Restart=on-failure
+RestartSec=2s
+
+NoNewPrivileges=yes
+# ProtectSystem=strict makes everything outside ReadWritePaths read-only, which
+# still lets the service read the TLS files under /etc/ledger.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=/var/lib/ledger
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target

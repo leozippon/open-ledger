@@ -1,0 +1,12 @@
+*.db
+*.db-*
+/dist/
+.DS_Store
+AGENTS.md
+.playwright-cli/
+.env
+.env.*
+*.pem
+*.key
+tls.crt
+tls.key

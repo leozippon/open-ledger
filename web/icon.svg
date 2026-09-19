@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="记账">
+  <rect width="512" height="512" fill="#c41e3a"/>
+  <g fill="#ffffff">
+    <rect x="238" y="218" width="36" height="162"/>
+    <rect x="186" y="270" width="140" height="36"/>
+    <rect x="186" y="332" width="140" height="36"/>
+    <polygon points="162.821,162.260 189.179,137.740 269.179,223.740 242.821,248.260"/>
+    <polygon points="322.821,137.740 349.179,162.260 269.179,248.260 242.821,223.740"/>
+  </g>
+</svg>

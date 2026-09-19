@@ -1,0 +1,12 @@
+# Ban hosts that keep failing SSH authentication. The [DEFAULT] block also
+# applies to the ledger jail, which deploy.sh installs alongside this file.
+# Installed by provision.sh as /etc/fail2ban/jail.d/sshd.local.
+[DEFAULT]
+bantime = 1h
+findtime = 10m
+maxretry = 5
+banaction = nftables-multiport
+
+[sshd]
+enabled = true
+backend = systemd
