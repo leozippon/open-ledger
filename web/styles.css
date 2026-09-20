@@ -216,6 +216,12 @@ input:focus-visible { outline: none; }
 .login-card .input + .input { margin-top: 10px; }
 .login-card .btn { width: 100%; margin-top: var(--space-16); }
 
+.login-switch {
+  display: block; width: 100%; margin-top: 14px; padding: 0;
+  background: none; border: 0; color: var(--muted);
+  font-size: var(--fs-footnote); cursor: pointer;
+}
+
 .login-error {
   margin: var(--space-12) 0 0; color: var(--danger); font-size: var(--fs-footnote);
 }

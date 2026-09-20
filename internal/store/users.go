@@ -94,7 +94,7 @@ func (s *Store) CreateUser(username, password string, isAdmin bool) (User, error
 		name, hash, isAdmin, now())
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			return User{}, invalid("用户名「%s」已被使用", name)
+			return User{}, UsernameTaken(name)
 		}
 		return User{}, fmt.Errorf("create user: %w", err)
 	}
@@ -147,7 +147,7 @@ func (s *Store) RenameUser(id int64, username string) (User, error) {
 	}
 	if _, err := s.db.Exec(`UPDATE users SET username = ? WHERE id = ?`, name, id); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			return User{}, invalid("用户名「%s」已被使用", name)
+			return User{}, UsernameTaken(name)
 		}
 		return User{}, fmt.Errorf("rename user: %w", err)
 	}
@@ -262,8 +262,23 @@ func prepareAdmin(admin Admin) (username, hash string, err error) {
 	return username, hash, err
 }
 
-// checkUsername keeps names short, printable and free of whitespace or quotes,
+// CheckUsername keeps names short, printable and free of whitespace or quotes,
 // so they read unambiguously in the login log lines fail2ban watches.
+func CheckUsername(name string) (string, error) {
+	return checkUsername(name)
+}
+
+// CheckPassword is the shared length rule for a new password.
+func CheckPassword(password string) error {
+	return checkPassword(password)
+}
+
+// UsernameTaken is the user-facing error when a login name is already in use,
+// either inside one book or across the whole directory.
+func UsernameTaken(name string) error {
+	return invalid("用户名「%s」已被使用", name)
+}
+
 func checkUsername(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	length := utf8.RuneCountInString(name)

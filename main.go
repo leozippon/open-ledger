@@ -12,9 +12,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
+	"ledger/internal/books"
 	"ledger/internal/server"
 	"ledger/internal/store"
 )
@@ -28,7 +31,10 @@ func main() {
 
 func run() error {
 	addr := env("LEDGER_ADDR", ":18080")
-	dbPath := env("LEDGER_DB", "ledger.db")
+	dataDir, dbPath, err := dataPaths()
+	if err != nil {
+		return err
+	}
 	tlsConfig, err := tlsSetup()
 	if err != nil {
 		return err
@@ -38,28 +44,41 @@ func run() error {
 		return err
 	}
 
+	reg, err := books.Open(dataDir)
+	if err != nil {
+		return err
+	}
+	defer reg.Close()
+
+	if err := importExisting(reg, dbPath, os.Getenv("LEDGER_IMPORT")); err != nil {
+		return err
+	}
+
 	admin := store.Admin{
 		Username: env("LEDGER_ADMIN_USER", "admin"),
 		Password: os.Getenv("LEDGER_ADMIN_PASSWORD"),
 	}
-	st, err := store.Open(dbPath, admin)
-	if errors.Is(err, store.ErrAdminRequired) {
-		return errors.New("the ledger has no members yet: set LEDGER_ADMIN_PASSWORD to create the first administrator")
-	}
+	empty, err := reg.Empty()
 	if err != nil {
 		return err
 	}
-	defer st.Close()
 	switch {
-	case st.CreatedAdmin() != "":
-		log.Printf("ledger: created the first administrator %q; manage further members in the app", st.CreatedAdmin())
-	case admin.Password != "":
-		log.Print("ledger: the ledger already has members, so LEDGER_ADMIN_USER and LEDGER_ADMIN_PASSWORD are ignored")
+	case !empty && admin.Password != "":
+		log.Print("ledger: the directory already has accounts, so LEDGER_ADMIN_USER and LEDGER_ADMIN_PASSWORD are ignored")
+	case empty && admin.Password != "":
+		acct, err := reg.Create(admin)
+		if err != nil {
+			return err
+		}
+		log.Printf("ledger: created the first book for %q; manage further members in the app", acct.Username)
+	case empty && os.Getenv("LEDGER_SIGNUP") == "0":
+		return errors.New("the directory has no accounts yet: set LEDGER_ADMIN_PASSWORD to create the first administrator, or enable signup")
 	}
 
-	handler, err := server.New(st, server.Config{
+	handler, err := server.New(reg, server.Config{
 		Secret:      secret,
 		Secure:      tlsConfig != nil,
+		Signup:      os.Getenv("LEDGER_SIGNUP") != "0",
 		DeepSeekKey: os.Getenv("LEDGER_DEEPSEEK_KEY"),
 		DeepSeekURL: os.Getenv("LEDGER_DEEPSEEK_URL"),
 	})
@@ -87,7 +106,7 @@ func run() error {
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(listener) }()
-	log.Printf("ledger: listening on %s://%s, database %s", scheme, listener.Addr(), dbPath)
+	log.Printf("ledger: listening on %s://%s, data %s", scheme, listener.Addr(), dataDir)
 
 	select {
 	case err := <-errc:
@@ -100,6 +119,65 @@ func run() error {
 		defer cancel()
 		return srv.Shutdown(shutdown)
 	}
+}
+
+// importExisting registers leftover single-file ledgers so an upgrade keeps
+// every member's login. A path that is already in the directory is skipped.
+// dataPaths puts the account directory and the optional upgrade file in one place.
+// LEDGER_DATA is the directory. LEDGER_DB defaults to ledger.db inside it, or
+// supplies the directory when LEDGER_DATA is unset.
+func dataPaths() (dataDir, dbPath string, err error) {
+	dataDir = os.Getenv("LEDGER_DATA")
+	dbPath = os.Getenv("LEDGER_DB")
+	switch {
+	case dataDir == "" && dbPath == "":
+		dbPath = "ledger.db"
+		dataDir = "."
+	case dataDir == "":
+		dataDir = filepath.Dir(dbPath)
+		if dataDir == "" {
+			dataDir = "."
+		}
+	case dbPath == "":
+		dbPath = filepath.Join(dataDir, "ledger.db")
+	}
+	if dataDir, err = filepath.Abs(dataDir); err != nil {
+		return "", "", err
+	}
+	dbPath, err = filepath.Abs(dbPath)
+	return dataDir, dbPath, err
+}
+
+func importExisting(reg *books.Books, dbPath, extra string) error {
+	var paths []string
+	if fileExists(dbPath) {
+		paths = append(paths, dbPath)
+	}
+	for _, path := range strings.Split(extra, ",") {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if !fileExists(path) {
+			return fmt.Errorf("LEDGER_IMPORT file %q does not exist", path)
+		}
+		paths = append(paths, path)
+	}
+	for _, path := range paths {
+		id, added, err := reg.Import(path)
+		if err != nil {
+			return err
+		}
+		if added {
+			log.Printf("ledger: imported book %s from %s", id, path)
+		}
+	}
+	return nil
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 // tlsSetup loads the certificate pair, or returns nil for plain HTTP when

@@ -1,6 +1,7 @@
 *.db
 *.db-*
 /dist/
+/demo-data/
 .DS_Store
 AGENTS.md
 .playwright-cli/

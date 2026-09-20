@@ -164,6 +164,7 @@ write_env() {
 		umask 077
 		cat >"$env_file" <<EOF
 LEDGER_ADDR=:18080
+LEDGER_DATA=/var/lib/ledger
 LEDGER_DB=/var/lib/ledger/ledger.db
 LEDGER_ADMIN_USER=$ADMIN_USER
 LEDGER_ADMIN_PASSWORD=$password

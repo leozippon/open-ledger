@@ -49,7 +49,7 @@ type modelDraft struct {
 	Shared       bool            `json:"shared"`
 }
 
-func (s *Server) recognize(w http.ResponseWriter, r *http.Request, _ store.User) {
+func (s *Server) recognize(w http.ResponseWriter, r *http.Request, sess session) {
 	if s.cfg.DeepSeekKey == "" {
 		writeErr(w, http.StatusServiceUnavailable, "未配置识别服务")
 		return
@@ -69,12 +69,12 @@ func (s *Server) recognize(w http.ResponseWriter, r *http.Request, _ store.User)
 		return
 	}
 
-	categories, err := s.store.Categories()
+	categories, err := sess.Book.Categories()
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	recent, err := s.store.RecentTransactions(recognizeRecent)
+	recent, err := sess.Book.RecentTransactions(recognizeRecent)
 	if err != nil {
 		s.fail(w, err)
 		return

@@ -34,12 +34,13 @@ try {
   <form class="login-card" id="login-form" autocomplete="on">
     <img class="login-mark" src="/icon.svg" alt="" width="64" height="64">
     <h1>记账</h1>
-    <p class="login-hint">登录家庭账本</p>
+    <p class="login-hint" id="login-hint">登录自己的账本</p>
     <input id="login-username" class="input" type="text" placeholder="用户名" autocomplete="username"
            autocapitalize="none" spellcheck="false" required>
     <input id="login-password" class="input" type="password" placeholder="密码" autocomplete="current-password" required>
     <p id="login-error" class="login-error" hidden></p>
     <button id="login-submit" class="btn btn-primary" type="submit">登录</button>
+    <button id="login-switch" class="login-switch" type="button" hidden>注册，开一本自己的账</button>
   </form>
 </section>
 

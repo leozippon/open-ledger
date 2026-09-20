@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"ledger/internal/books"
 	"ledger/internal/server"
 	"ledger/internal/store"
 )
@@ -31,20 +32,41 @@ func newServer(t *testing.T) (*httptest.Server, *http.Client) {
 
 func newServerWith(t *testing.T, cfg server.Config) (*httptest.Server, *http.Client) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "ledger.db"),
-		store.Admin{Username: adminUser, Password: adminPassword})
+	reg, err := books.Open(t.TempDir())
 	if err != nil {
-		t.Fatalf("open store: %v", err)
+		t.Fatalf("open books: %v", err)
 	}
-	t.Cleanup(func() { st.Close() })
+	t.Cleanup(func() { reg.Close() })
+	if _, err := reg.Create(store.Admin{Username: adminUser, Password: adminPassword}); err != nil {
+		t.Fatalf("create book: %v", err)
+	}
 
-	handler, err := server.New(st, cfg)
+	handler, err := server.New(reg, cfg)
 	if err != nil {
 		t.Fatalf("build server: %v", err)
 	}
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	return srv, newClient(t)
+}
+
+func newEmptyServer(t *testing.T, cfg server.Config) (*httptest.Server, *books.Books, *http.Client) {
+	t.Helper()
+	if len(cfg.Secret) == 0 {
+		cfg.Secret = []byte("test-session-secret")
+	}
+	reg, err := books.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open books: %v", err)
+	}
+	t.Cleanup(func() { reg.Close() })
+	handler, err := server.New(reg, cfg)
+	if err != nil {
+		t.Fatalf("build server: %v", err)
+	}
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	return srv, reg, newClient(t)
 }
 
 func newClient(t *testing.T) *http.Client {
@@ -685,6 +707,8 @@ func TestFamilyMembers(t *testing.T) {
 	if response, _ = do(t, admin, http.MethodDelete, srv.URL+"/api/users/"+itoa(member.ID), nil); response.StatusCode != http.StatusConflict {
 		t.Errorf("delete a member with entries = %d, want 409", response.StatusCode)
 	}
+	stillThere := newClient(t)
+	mustLogin(t, stillThere, srv, "papa", "another-secret")
 	_, payload = do(t, admin, http.MethodGet, srv.URL+"/api/me", nil)
 	adminID := int64(decode[map[string]any](t, payload)["id"].(float64))
 	if response, _ = do(t, admin, http.MethodDelete, srv.URL+"/api/users/"+itoa(adminID), nil); response.StatusCode != http.StatusBadRequest {
@@ -830,10 +854,11 @@ func TestAppleTouchIconAliases(t *testing.T) {
 func TestForgedCookieIsRejected(t *testing.T) {
 	srv, _ := newServer(t)
 	for name, value := range map[string]string{
-		"garbage":        "nonsense",
-		"no signature":   "1.1.99999999999",
-		"wrong hmac":     "1.1.99999999999.deadbeef",
-		"unknown member": "9999.1.99999999999.deadbeef",
+		"garbage":         "nonsense",
+		"no signature":    "1.1.99999999999",
+		"wrong hmac":      "1.1.99999999999.deadbeef",
+		"old three-field": "1.1.99999999999.deadbeef",
+		"four-field junk": "abc.1.1.99999999999.deadbeef",
 	} {
 		request, err := http.NewRequest(http.MethodGet, srv.URL+"/api/me", nil)
 		if err != nil {
@@ -1033,6 +1058,148 @@ func pickCategory(t *testing.T, categories []store.Category, kind string) int64 
 }
 
 func itoa(id int64) string { return strconv.FormatInt(id, 10) }
+
+func TestSignupIsolatesBooks(t *testing.T) {
+	srv, _, _ := newEmptyServer(t, server.Config{Signup: true})
+	alice, bob := newClient(t), newClient(t)
+
+	if response, payload := do(t, alice, http.MethodPost, srv.URL+"/api/signup", map[string]string{
+		"username": "alice", "password": "alice-secret",
+	}); response.StatusCode != http.StatusCreated {
+		t.Fatalf("signup alice = %d %s", response.StatusCode, payload)
+	}
+	if response, payload := do(t, bob, http.MethodPost, srv.URL+"/api/signup", map[string]string{
+		"username": "bob", "password": "bobby-secret",
+	}); response.StatusCode != http.StatusCreated {
+		t.Fatalf("signup bob = %d %s", response.StatusCode, payload)
+	}
+	if response, _ := do(t, newClient(t), http.MethodPost, srv.URL+"/api/signup", map[string]string{
+		"username": "alice", "password": "other-secret",
+	}); response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("duplicate signup = %d, want 400", response.StatusCode)
+	}
+
+	aliceFood := firstExpense(t, alice, srv)
+	if response, payload := do(t, alice, http.MethodPost, srv.URL+"/api/transactions", map[string]any{
+		"kind": "expense", "amount": 1200, "category_id": aliceFood, "date": "2026-03-01", "note": "alice coffee",
+	}); response.StatusCode != http.StatusCreated {
+		t.Fatalf("alice entry = %d %s", response.StatusCode, payload)
+	}
+	_, payload := do(t, bob, http.MethodGet, srv.URL+"/api/transactions?month=2026-03", nil)
+	if got := decode[[]store.Transaction](t, payload); len(got) != 0 {
+		t.Fatalf("bob saw alice's entries: %+v", got)
+	}
+	_, payload = do(t, alice, http.MethodGet, srv.URL+"/api/transactions?month=2026-03", nil)
+	if got := decode[[]store.Transaction](t, payload); len(got) != 1 || got[0].Note != "alice coffee" {
+		t.Fatalf("alice entries = %+v", got)
+	}
+
+	if response, payload := do(t, alice, http.MethodPost, srv.URL+"/api/users", map[string]any{
+		"username": "guest", "password": "guest-secret",
+	}); response.StatusCode != http.StatusCreated {
+		t.Fatalf("invite guest = %d %s", response.StatusCode, payload)
+	}
+	guest := newClient(t)
+	mustLogin(t, guest, srv, "guest", "guest-secret")
+	_, payload = do(t, guest, http.MethodGet, srv.URL+"/api/transactions?month=2026-03", nil)
+	if got := decode[[]store.Transaction](t, payload); len(got) != 1 || got[0].Note != "alice coffee" {
+		t.Fatalf("guest should share alice's book, got %+v", got)
+	}
+
+	_, users := do(t, alice, http.MethodGet, srv.URL+"/api/users", nil)
+	var guestID int64
+	for _, u := range decode[[]store.User](t, users) {
+		if u.Username == "guest" {
+			guestID = u.ID
+		}
+	}
+	if response, payload := do(t, alice, http.MethodPut, srv.URL+"/api/users/"+itoa(guestID), map[string]string{
+		"username": "bob",
+	}); response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("rename onto bob = %d %s, want 400", response.StatusCode, payload)
+	}
+}
+
+func TestSignupDisabled(t *testing.T) {
+	srv, _, client := newEmptyServer(t, server.Config{Signup: false})
+	_, payload := do(t, client, http.MethodGet, srv.URL+"/api/config", nil)
+	if decode[map[string]any](t, payload)["signup"] != false {
+		t.Fatalf("config = %s, want signup false", payload)
+	}
+	if response, _ := do(t, client, http.MethodPost, srv.URL+"/api/signup", map[string]string{
+		"username": "alice", "password": "alice-secret",
+	}); response.StatusCode != http.StatusForbidden {
+		t.Fatalf("signup while closed = %d, want 403", response.StatusCode)
+	}
+}
+
+func TestImportedBooksShareOnePort(t *testing.T) {
+	dir := t.TempDir()
+	keepPath := filepath.Join(dir, "keep.db")
+	leavePath := filepath.Join(dir, "leave.db")
+	keep, err := store.Open(keepPath, store.Admin{Username: "keeper", Password: "keeper-secret"})
+	if err != nil {
+		t.Fatalf("open keep: %v", err)
+	}
+	food := pickCategory(t, mustCategories(t, keep), store.KindExpense)
+	if _, err := keep.CreateTransaction(store.TxInput{
+		Kind: store.KindExpense, Amount: 3300, CategoryID: food, Date: "2026-03-01",
+		UserID: 1, Note: "rent", Currency: "CNY",
+	}); err != nil {
+		t.Fatalf("keep entry: %v", err)
+	}
+	keep.Close()
+	leave, err := store.Open(leavePath, store.Admin{Username: "leaver", Password: "leaver-secret"})
+	if err != nil {
+		t.Fatalf("open leave: %v", err)
+	}
+	leave.Close()
+
+	reg, err := books.Open(filepath.Join(dir, "data"))
+	if err != nil {
+		t.Fatalf("open books: %v", err)
+	}
+	t.Cleanup(func() { reg.Close() })
+	if _, _, err := reg.Import(keepPath); err != nil {
+		t.Fatalf("import keep: %v", err)
+	}
+	if _, _, err := reg.Import(leavePath); err != nil {
+		t.Fatalf("import leave: %v", err)
+	}
+	handler, err := server.New(reg, server.Config{Secret: []byte("test-session-secret")})
+	if err != nil {
+		t.Fatalf("build server: %v", err)
+	}
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	keeper, leaver := newClient(t), newClient(t)
+	mustLogin(t, keeper, srv, "keeper", "keeper-secret")
+	mustLogin(t, leaver, srv, "leaver", "leaver-secret")
+	_, payload := do(t, keeper, http.MethodGet, srv.URL+"/api/transactions?month=2026-03", nil)
+	if got := decode[[]store.Transaction](t, payload); len(got) != 1 || got[0].Note != "rent" {
+		t.Fatalf("keeper entries = %+v", got)
+	}
+	_, payload = do(t, leaver, http.MethodGet, srv.URL+"/api/transactions?month=2026-03", nil)
+	if got := decode[[]store.Transaction](t, payload); len(got) != 0 {
+		t.Fatalf("leaver saw keeper's entries: %+v", got)
+	}
+}
+
+func firstExpense(t *testing.T, client *http.Client, srv *httptest.Server) int64 {
+	t.Helper()
+	_, payload := do(t, client, http.MethodGet, srv.URL+"/api/categories", nil)
+	return pickCategory(t, decode[[]store.Category](t, payload), store.KindExpense)
+}
+
+func mustCategories(t *testing.T, st *store.Store) []store.Category {
+	t.Helper()
+	cats, err := st.Categories()
+	if err != nil {
+		t.Fatalf("categories: %v", err)
+	}
+	return cats
+}
 
 func cardFund(card store.Card, currency string) int64 {
 	for _, fund := range card.Funds {

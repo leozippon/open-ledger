@@ -16,6 +16,30 @@ import (
 	"time"
 )
 
+func TestDataPaths(t *testing.T) {
+	t.Setenv("LEDGER_DATA", "")
+	t.Setenv("LEDGER_DB", "")
+	dir, db, err := dataPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wd, _ := os.Getwd()
+	if dir != wd || db != filepath.Join(wd, "ledger.db") {
+		t.Fatalf("defaults = %s %s", dir, db)
+	}
+
+	root := t.TempDir()
+	t.Setenv("LEDGER_DATA", root)
+	t.Setenv("LEDGER_DB", "")
+	dir, db, err = dataPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir != root || db != filepath.Join(root, "ledger.db") {
+		t.Fatalf("data dir only = %s %s", dir, db)
+	}
+}
+
 func TestTLSSetupNeedsBothOrNeither(t *testing.T) {
 	certFile, keyFile := writeSelfSigned(t)
 

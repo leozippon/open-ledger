@@ -35,8 +35,10 @@ const query = (params) => {
 };
 
 export const api = {
+  config: () => call('GET', '/api/config'),
   me: () => call('GET', '/api/me'),
   login: (username, password) => call('POST', '/api/login', { username, password }),
+  signup: (username, password) => call('POST', '/api/signup', { username, password }),
   logout: () => call('POST', '/api/logout'),
   changePassword: (oldPassword, newPassword) =>
     call('PUT', '/api/me/password', { old_password: oldPassword, new_password: newPassword }),

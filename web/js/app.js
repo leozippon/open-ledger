@@ -19,6 +19,9 @@ const usernameEl = document.getElementById('login-username');
 const passwordEl = document.getElementById('login-password');
 const loginErrorEl = document.getElementById('login-error');
 const loginSubmitEl = document.getElementById('login-submit');
+const loginHintEl = document.getElementById('login-hint');
+const loginSwitchEl = document.getElementById('login-switch');
+let registerMode = false;
 
 const views = { home: homeView, settings: settingsView };
 
@@ -241,7 +244,16 @@ function showLogin() {
   appEl.hidden = true;
   loginEl.hidden = false;
   state.me = null;
+  setRegisterMode(false);
   (usernameEl.value ? passwordEl : usernameEl).focus({ preventScroll: true });
+}
+
+function setRegisterMode(on) {
+  registerMode = on;
+  loginHintEl.textContent = on ? '注册，开一本自己的账' : '登录自己的账本';
+  loginSubmitEl.textContent = on ? '注册' : '登录';
+  passwordEl.autocomplete = on ? 'new-password' : 'current-password';
+  loginSwitchEl.textContent = on ? '已有账本？去登录' : '注册，开一本自己的账';
 }
 
 tabbarEl.addEventListener('click', (event) => {
@@ -251,12 +263,20 @@ tabbarEl.addEventListener('click', (event) => {
   else setTab(button.dataset.tab);
 });
 
+loginSwitchEl.addEventListener('click', () => {
+  loginErrorEl.hidden = true;
+  setRegisterMode(!registerMode);
+  (usernameEl.value ? passwordEl : usernameEl).focus({ preventScroll: true });
+});
+
 loginForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   loginErrorEl.hidden = true;
   loginSubmitEl.disabled = true;
   try {
-    state.me = await api.login(usernameEl.value, passwordEl.value);
+    state.me = registerMode
+      ? await api.signup(usernameEl.value, passwordEl.value)
+      : await api.login(usernameEl.value, passwordEl.value);
     passwordEl.value = '';
     state.tab = 'home';
     state.pane = 'ledger';
@@ -273,6 +293,12 @@ loginForm.addEventListener('submit', async (event) => {
 window.addEventListener('ledger:unauthorized', showLogin);
 
 (async function boot() {
+  try {
+    const cfg = await api.config();
+    loginSwitchEl.hidden = !cfg.signup;
+  } catch {
+    loginSwitchEl.hidden = true;
+  }
   try {
     state.me = await api.me();
     showApp();

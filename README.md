@@ -1,8 +1,8 @@
 # 记账
 
-一家人一本账。多用户、分类和活动都能改，银行卡按币种记，短信或照片也能自动入账。
+同一地址登录，各看各的账。注册就开一本新账；一本账里仍可邀请家人、记共同账。分类和活动都能改，银行卡按币种记，短信或照片也能自动入账。
 
-- 多用户：每笔能看出是谁记的，也可以记入共同账。管理员管成员和密码。
+- 多用户：不同账本互不可见。一本账里每笔能看出是谁记的，也可以记入共同账。管理员管成员和密码。
 - 灵活分类：分类可改图标、颜色、归档和顺序；支出和收入挂在活动上。
 - 支持多国银行卡：按币种记余额，银联、Visa、Mastercard、运通都能用。
 - AI 自动识别：粘贴银行短信或拍一张单，自动填好金额和分类。
@@ -76,23 +76,26 @@ make demo
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `LEDGER_ADDR` | `:18080` | 监听地址 |
-| `LEDGER_DB` | `ledger.db` | SQLite 路径 |
-| `LEDGER_ADMIN_USER` | `admin` | 首个管理员 |
-| `LEDGER_ADMIN_PASSWORD` | 无 | 首个管理员密码，至少 8 位 |
+| `LEDGER_DATA` | `LEDGER_DB` 所在目录 | 账号目录和新建账本的存放位置 |
+| `LEDGER_DB` | `ledger.db` | 若该文件已存在，启动时导入为一本账 |
+| `LEDGER_IMPORT` | 无 | 额外要导入的旧库，逗号分隔 |
+| `LEDGER_SIGNUP` | 开放 | 设为 `0` 则关掉公开注册 |
+| `LEDGER_ADMIN_USER` | `admin` | 还没有任何账号时，第一本账的管理员 |
+| `LEDGER_ADMIN_PASSWORD` | 无 | 第一本账的管理员密码，至少 8 位 |
 | `LEDGER_SECRET` | 无 | 会话签名密钥，至少 16 个字符 |
 | `LEDGER_TLS_CERT` / `LEDGER_TLS_KEY` | 无 | 成对填写才启用 HTTPS |
 | `LEDGER_DEEPSEEK_KEY` | 无 | 识别密钥；留空则不出现入口 |
 | `LEDGER_DEEPSEEK_URL` | `https://api.deepseek.com` | 识别接口地址 |
 
-用户名和密码只在库里还没有成员时用。密钥留空会每次随机，重启后要重新登录。识别密钥只留在服务器上，只有成员主动点「短信」或「识图」才会把这段内容发出去。
+用户名全站唯一。管理员密码只在还没有任何账号时用来开第一本账；之后忽略。密钥留空会每次随机，重启后要重新登录。识别密钥只留在服务器上，只有成员主动点「短信」或「识图」才会把这段内容发出去。登录页开放注册时，可以自己开一本账。
 
 放到服务器上，仓库里有 Debian 13 的安装脚本，以及从本机编译推送的脚本。配好 SSH 别名后，先跑一次 `deploy/server/provision.sh`，之后更新再跑 `deploy/deploy.sh your-server`。两个脚本都可以重复执行，安装脚本不会覆盖已有的配置、证书和数据库。
 
-数据在一个 SQLite 文件里。开了 WAL，复制前先停服务；也可以在「我的」里导出 CSV。
+账号目录和每本账都在数据目录里。开了 WAL，复制前先停服务；也可以在「我的」里导出 CSV。
 
 ```
 systemctl stop ledger
-cp /var/lib/ledger/ledger.db ~/ledger-$(date +%F).db
+cp -a /var/lib/ledger ~/ledger-$(date +%F)
 systemctl start ledger
 ```
 

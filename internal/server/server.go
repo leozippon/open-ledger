@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"ledger/internal/books"
 	"ledger/internal/store"
 	"ledger/web"
 )
@@ -19,21 +20,26 @@ type Config struct {
 	Secret []byte
 	// Secure marks the session cookie as HTTPS-only. It follows the TLS setup.
 	Secure bool
+	// Signup lets anyone open a new isolated book.
+	Signup bool
 	// DeepSeekKey enables bill recognition when set. It never goes to the browser.
 	DeepSeekKey string
 	// DeepSeekURL is the API origin. Empty uses the public DeepSeek endpoint.
 	DeepSeekURL string
 }
 
-// Server wires the store, the session logic and the routes together.
+// Server wires the book directory, the session logic and the routes together.
 type Server struct {
-	store *store.Store
+	books *books.Books
 	cfg   Config
 	limit *throttle
 }
 
 // New builds the HTTP handler for the whole application.
-func New(st *store.Store, cfg Config) (http.Handler, error) {
+func New(reg *books.Books, cfg Config) (http.Handler, error) {
+	if reg == nil {
+		return nil, errors.New("book directory must not be nil")
+	}
 	if len(cfg.Secret) == 0 {
 		return nil, errors.New("session secret must not be empty")
 	}
@@ -41,10 +47,12 @@ func New(st *store.Store, cfg Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{store: st, cfg: cfg, limit: newThrottle()}
+	s := &Server{books: reg, cfg: cfg, limit: newThrottle()}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/config", s.publicConfig)
 	mux.HandleFunc("POST /api/login", s.login)
+	mux.HandleFunc("POST /api/signup", s.signup)
 	mux.HandleFunc("POST /api/logout", s.logout)
 	mux.HandleFunc("GET /api/me", s.guard(s.me))
 	mux.HandleFunc("PUT /api/me/password", s.guard(s.changeMyPassword))
