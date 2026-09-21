@@ -48,7 +48,7 @@ func TestRecognizePromptDocument(t *testing.T) {
 
 一条对应一笔独立订单或一次独立付款。同一付款里的多件商品不要拆开；不同订单或不同付款不要合并。
 
-只输出 {"entries":[{kind,amount,category_id,category_name,activity_id,activity_name,card_id,card_name,date,note,shared}]}。
+只输出一个 JSON 对象：{"entries":[{kind,amount,category_id,category_name,activity_id,activity_name,card_id,card_name,date,note,shared}]}。
 kind 为 expense 或 income。amount 为人民币元，最多两位小数。
 category_id、activity_id 必须是下列编号，每笔单独选最合适的一个；活动看不出则选默认。
 card_id 能对应到卡则填编号，看不出则 0。
