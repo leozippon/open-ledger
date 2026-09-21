@@ -736,6 +736,8 @@ button.cal-cell { transition: background var(--dur), transform var(--dur); }
 }
 
 .recognize-open:active { background: var(--sunken); transform: scale(0.98); }
+.recognize-row.busy .recognize-open { opacity: 0.55; }
+.recognize-open:disabled { pointer-events: none; }
 
 .recognize-mark {
   display: grid; place-items: center; flex: 0 0 auto;
@@ -944,6 +946,14 @@ button.cal-cell { transition: background var(--dur), transform var(--dur); }
 
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
 .toast.bad { background: var(--danger); }
+.toast.hold {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.toast-spin {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.28); border-top-color: #fff;
+  animation: spin 0.7s linear infinite;
+}
 
 .dialog {
   position: fixed; top: 50%; left: 50%; z-index: 55;

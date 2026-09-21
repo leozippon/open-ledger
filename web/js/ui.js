@@ -139,15 +139,27 @@ function followKeyboard(sheet) {
   };
 }
 
-export function toast(message, bad = false) {
-  toastEl.textContent = message;
+export function toast(message, bad = false, hold = false) {
   toastEl.classList.toggle('bad', bad);
+  toastEl.classList.toggle('hold', hold);
+  toastEl.replaceChildren();
+  if (hold) {
+    append(toastEl, [
+      el('i', { class: 'toast-spin', 'aria-hidden': true }),
+      el('span', { text: message }),
+    ]);
+  } else {
+    toastEl.textContent = message;
+  }
   toastEl.hidden = false;
   requestAnimationFrame(() => toastEl.classList.add('on'));
   clearTimeout(toastTimer);
+  if (hold) return;
   toastTimer = setTimeout(() => {
-    toastEl.classList.remove('on');
-    setTimeout(() => { toastEl.hidden = true; }, SHEET_MS);
+    toastEl.classList.remove('on', 'hold');
+    setTimeout(() => {
+      if (!toastEl.classList.contains('on')) toastEl.hidden = true;
+    }, SHEET_MS);
   }, 2200);
 }
 

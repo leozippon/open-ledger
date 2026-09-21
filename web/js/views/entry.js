@@ -401,7 +401,8 @@ let busy = false;
 async function submitRecognize(body, onDone) {
   if (busy) return false;
   busy = true;
-  toast('正在识别…');
+  setRecognizeBusy(true);
+  toast('正在识别…', false, true);
   try {
     await onDone(await api.recognize(body));
     return true;
@@ -410,6 +411,14 @@ async function submitRecognize(body, onDone) {
     return false;
   } finally {
     busy = false;
+    setRecognizeBusy(false);
+  }
+}
+
+function setRecognizeBusy(on) {
+  for (const row of document.querySelectorAll('.recognize-row')) {
+    row.classList.toggle('busy', on);
+    for (const button of row.querySelectorAll('button')) button.disabled = on;
   }
 }
 
