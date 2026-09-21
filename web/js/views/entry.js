@@ -368,16 +368,32 @@ function recognizeIcon(kind) {
 }
 
 export async function commitRecognized(ctx, got) {
-  const saved = await api.createTransaction({
-    kind: got.kind,
-    amount: got.amount,
-    date: got.date,
-    note: got.note ?? '',
-    category_id: got.category_id,
-    shared: !!got.shared,
-  });
-  toast('已记下');
-  await ctx.afterSave(saved);
+  const entries = Array.isArray(got?.entries) && got.entries.length
+    ? got.entries
+    : (got?.kind ? [got] : []);
+  if (!entries.length) throw new Error('没有识别到账目');
+  let saved = null;
+  let n = 0;
+  try {
+    for (const item of entries) {
+      saved = await api.createTransaction({
+        kind: item.kind,
+        amount: item.amount,
+        date: item.date,
+        note: item.note ?? '',
+        category_id: item.category_id,
+        activity_id: item.activity_id || 0,
+        card_id: item.card_id || 0,
+        shared: !!item.shared,
+      });
+      n += 1;
+    }
+    toast(n === 1 ? '已记下' : `已记下 ${n} 笔`);
+  } catch (error) {
+    if (!n) throw error;
+    toast(`记下了 ${n} 笔，后面失败：${error.message}`, true);
+  }
+  if (saved) await ctx.afterSave(saved);
 }
 
 let busy = false;

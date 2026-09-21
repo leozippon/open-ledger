@@ -219,40 +219,52 @@ async function openActivitySheet(ctx, item) {
   if (activitySheet) activitySheet.close();
   ctx.state.ledgerActivity = item.id;
   activityItem = item;
-  const results = el('div', { class: 'search-results' }, [card(empty('🌤️', '正在加载'))]);
+  let list;
+  try {
+    list = await activityTxs(ctx, item.id);
+  } catch (error) {
+    toast(error.message, true);
+    if (activityItem === item) {
+      activityItem = null;
+      if (ctx.state.ledgerActivity === item.id) ctx.state.ledgerActivity = 0;
+    }
+    return;
+  }
+  if (activityItem !== item) return;
   activitySheet = openSheet({
     title: item.name,
-    body: [activitySheetSummary(item), results],
+    body: activitySheetBody(ctx, item, list),
     onClose: () => {
       activitySheet = null;
       activityItem = null;
       if (ctx.state.ledgerActivity === item.id) ctx.state.ledgerActivity = 0;
     },
   });
-  try {
-    results.replaceChildren(entryList(ctx, await activityTxs(ctx, item.id), '这个月这个活动还没有记录'));
-  } catch (error) {
-    toast(error.message, true);
-    activitySheet.close();
-  }
 }
 
 export async function refreshActivitySheet(ctx) {
   if (!activitySheet || !activityItem) return;
-  const item = (ctx.state.activityMonths || []).find((row) => row.id === activityItem.id);
+  const id = activityItem.id;
+  const item = (ctx.state.activityMonths || []).find((row) => row.id === id);
   if (!item) {
     activitySheet.close();
     return;
   }
   activityItem = item;
   try {
-    activitySheet.setBody([
-      activitySheetSummary(item),
-      el('div', { class: 'search-results' }, [entryList(ctx, await activityTxs(ctx, item.id), '这个月这个活动还没有记录')]),
-    ]);
+    const list = await activityTxs(ctx, item.id);
+    if (!activitySheet || activityItem?.id !== id) return;
+    activitySheet.setBody(activitySheetBody(ctx, activityItem, list));
   } catch (error) {
     toast(error.message, true);
   }
+}
+
+function activitySheetBody(ctx, item, list) {
+  return [
+    activitySheetSummary(item),
+    el('div', { class: 'search-results' }, [entryList(ctx, list, '这个月这个活动还没有记录')]),
+  ];
 }
 
 function activitySheetSummary(item) {
