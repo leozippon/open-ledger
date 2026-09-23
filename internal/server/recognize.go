@@ -38,9 +38,13 @@ type recognizeOut struct {
 type recognizeEntry struct {
 	Kind       string `json:"kind"`
 	Amount     int64  `json:"amount"`
+	Currency   string `json:"currency"`
+	ToAmount   int64  `json:"to_amount"`
+	ToCurrency string `json:"to_currency"`
 	CategoryID int64  `json:"category_id"`
 	ActivityID int64  `json:"activity_id"`
 	CardID     int64  `json:"card_id"`
+	ToCardID   int64  `json:"to_card_id"`
 	Date       string `json:"date"`
 	Note       string `json:"note"`
 	Shared     bool   `json:"shared"`
@@ -49,6 +53,9 @@ type recognizeEntry struct {
 type modelDraft struct {
 	Kind         string          `json:"kind"`
 	Amount       json.RawMessage `json:"amount"`
+	Currency     string          `json:"currency"`
+	ToAmount     json.RawMessage `json:"to_amount"`
+	ToCurrency   string          `json:"to_currency"`
 	CategoryID   int64           `json:"category_id"`
 	CategoryName string          `json:"category_name"`
 	ActivityID   int64           `json:"activity_id"`
@@ -56,6 +63,9 @@ type modelDraft struct {
 	CardID       int64           `json:"card_id"`
 	CardName     string          `json:"card_name"`
 	CardLast4    string          `json:"card_last4"`
+	ToCardID     int64           `json:"to_card_id"`
+	ToCardName   string          `json:"to_card_name"`
+	ToCardLast4  string          `json:"to_card_last4"`
 	Date         string          `json:"date"`
 	Note         string          `json:"note"`
 	Shared       bool            `json:"shared"`
@@ -210,13 +220,15 @@ func apiErrorMessage(body []byte) string {
 const recognizeInstructions = `根据文字或图片整理家庭账本。
 
 一条对应一笔独立订单或一次独立付款。同一付款里的多件商品不要拆开；不同订单或不同付款不要合并。
+结售汇或跨境汇款拆成相邻两笔：先在汇出卡上兑换，再把买入的货币转到收款卡。手续费为零则不另记。
 
-只输出一个 JSON 对象：{"entries":[{kind,amount,category_id,category_name,activity_id,activity_name,card_id,card_name,date,note,shared}]}。
-kind 为 expense 或 income。amount 为人民币元，最多两位小数。
-category_id、activity_id 必须是下列编号，每笔单独选最合适的一个；活动看不出则选默认。
-card_id 能对应到卡则填编号，看不出则 0。
-date 为 YYYY-MM-DD。note 简短，只写这一笔，并模仿近期备注；没有则空字符串。
-shared 在全家一起时为 true，个人或看不出时为 false。
+只输出一个 JSON 对象：{"entries":[{kind,amount,currency,to_amount,to_currency,category_id,category_name,activity_id,activity_name,card_id,card_name,to_card_id,to_card_name,date,note,shared}]}。
+kind 为 expense、income、exchange 或 transfer。金额最多两位小数，货币用 CNY、HKD、USD 这类代码。
+支出和收入：amount 为人民币元。category_id、activity_id 必须是下列编号，每笔单独选；活动看不出则选默认。card_id 能对应则填，看不出则 0。
+兑换：amount 与 currency 是卖出，to_amount 与 to_currency 是买入，发生在 card_id 这一张卡上。
+转账：amount 与 currency 从 card_id 转到 to_card_id，两张卡都要从下列银行卡里对应上。
+date 为 YYYY-MM-DD。note 简短，只写这一笔；没有则空字符串。
+shared 在全家一起时为 true，个人、兑换、转账或看不出时为 false。
 `
 
 func systemPrompt(categories []store.Category, activities []store.Activity, cards []store.Card, recent []store.Transaction) string {
@@ -373,13 +385,37 @@ func capDrafts(drafts []modelDraft) []modelDraft {
 }
 
 func bindDrafts(drafts []modelDraft, categories []store.Category, activities []store.Activity, cards []store.Card) (recognizeOut, error) {
-	out := recognizeOut{Entries: []recognizeEntry{}}
-	for _, draft := range drafts {
+	type row struct {
+		kind  string
+		entry recognizeEntry
+		ok    bool
+	}
+	rows := make([]row, len(drafts))
+	for i, draft := range drafts {
+		rows[i].kind = draft.Kind
 		entry, err := bindDraft(draft, categories, activities, cards)
 		if err != nil {
 			continue
 		}
-		out.Entries = append(out.Entries, entry)
+		rows[i].entry = entry
+		rows[i].ok = true
+		rows[i].kind = entry.Kind
+	}
+	for i := range rows {
+		if rows[i].ok && rows[i].entry.Kind == store.KindExchange && i+1 < len(rows) && rows[i+1].kind == store.KindTransfer && !rows[i+1].ok {
+			rows[i].ok = false
+		}
+	}
+	for i := range rows {
+		if rows[i].ok && rows[i].entry.Kind == store.KindTransfer && i > 0 && rows[i-1].kind == store.KindExchange && !rows[i-1].ok {
+			rows[i].ok = false
+		}
+	}
+	out := recognizeOut{Entries: []recognizeEntry{}}
+	for _, item := range rows {
+		if item.ok {
+			out.Entries = append(out.Entries, item.entry)
+		}
 	}
 	if len(out.Entries) == 0 {
 		return recognizeOut{}, fmt.Errorf("没有识别到账目")
@@ -388,34 +424,112 @@ func bindDrafts(drafts []modelDraft, categories []store.Category, activities []s
 }
 
 func bindDraft(draft modelDraft, categories []store.Category, activities []store.Activity, cards []store.Card) (recognizeEntry, error) {
-	cents, err := parseModelAmount(draft.Amount)
+	date, note, err := draftWhen(draft)
 	if err != nil {
 		return recognizeEntry{}, err
 	}
+	switch draft.Kind {
+	case store.KindExchange:
+		return bindExchange(draft, cards, date, note)
+	case store.KindTransfer:
+		return bindTransfer(draft, cards, date, note)
+	default:
+		return bindCash(draft, categories, activities, cards, date, note)
+	}
+}
+
+func draftWhen(draft modelDraft) (string, string, error) {
 	date := strings.TrimSpace(draft.Date)
 	if date == "" {
 		date = time.Now().Format("2006-01-02")
 	}
 	if _, err := time.Parse("2006-01-02", date); err != nil {
-		return recognizeEntry{}, fmt.Errorf("识别出的日期无效")
-	}
-	kind, id := resolveCategory(draft, categories)
-	if id == 0 {
-		return recognizeEntry{}, fmt.Errorf("无法对应到现有分类")
+		return "", "", fmt.Errorf("识别出的日期无效")
 	}
 	note := strings.TrimSpace(draft.Note)
 	if utf8.RuneCountInString(note) > 100 {
 		note = string([]rune(note)[:100])
 	}
+	return date, note, nil
+}
+
+func bindCash(draft modelDraft, categories []store.Category, activities []store.Activity, cards []store.Card, date, note string) (recognizeEntry, error) {
+	cents, err := parseModelAmount(draft.Amount)
+	if err != nil {
+		return recognizeEntry{}, err
+	}
+	kind, id := resolveCategory(draft, categories)
+	if id == 0 {
+		return recognizeEntry{}, fmt.Errorf("无法对应到现有分类")
+	}
 	return recognizeEntry{
 		Kind:       kind,
 		Amount:     cents,
+		Currency:   store.CurrencyCNY,
 		CategoryID: id,
 		ActivityID: resolveActivityID(draft, activities),
-		CardID:     resolveCardID(draft, cards),
+		CardID:     resolveCardRef(draft.CardID, draft.CardName, draft.CardLast4, cards),
 		Date:       date,
 		Note:       note,
 		Shared:     draft.Shared,
+	}, nil
+}
+
+func bindExchange(draft modelDraft, cards []store.Card, date, note string) (recognizeEntry, error) {
+	sell, err := parseModelAmount(draft.Amount)
+	if err != nil {
+		return recognizeEntry{}, err
+	}
+	buy, err := parseModelAmount(draft.ToAmount)
+	if err != nil {
+		return recognizeEntry{}, err
+	}
+	sellCode, ok := canonicalCurrency(draft.Currency)
+	if !ok {
+		return recognizeEntry{}, fmt.Errorf("无法对应卖出货币")
+	}
+	buyCode, ok := canonicalCurrency(draft.ToCurrency)
+	if !ok || buyCode == sellCode {
+		return recognizeEntry{}, fmt.Errorf("无法对应买入货币")
+	}
+	cardID := resolveCardRef(draft.CardID, draft.CardName, draft.CardLast4, cards)
+	if cardID == 0 {
+		return recognizeEntry{}, fmt.Errorf("无法对应银行卡")
+	}
+	return recognizeEntry{
+		Kind:       store.KindExchange,
+		Amount:     sell,
+		Currency:   sellCode,
+		ToAmount:   buy,
+		ToCurrency: buyCode,
+		CardID:     cardID,
+		Date:       date,
+		Note:       note,
+	}, nil
+}
+
+func bindTransfer(draft modelDraft, cards []store.Card, date, note string) (recognizeEntry, error) {
+	cents, err := parseModelAmount(draft.Amount)
+	if err != nil {
+		return recognizeEntry{}, err
+	}
+	code, ok := canonicalCurrency(draft.Currency)
+	if !ok {
+		code = store.CurrencyCNY
+	}
+	fromID := resolveCardRef(draft.CardID, draft.CardName, draft.CardLast4, cards)
+	toID := resolveCardRef(draft.ToCardID, draft.ToCardName, draft.ToCardLast4, cards)
+	if fromID == 0 || toID == 0 || fromID == toID {
+		return recognizeEntry{}, fmt.Errorf("无法对应转账银行卡")
+	}
+	return recognizeEntry{
+		Kind:     store.KindTransfer,
+		Amount:   cents,
+		Currency: code,
+		CardID:   fromID,
+		ToCardID: toID,
+		Date:     date,
+		Note:     note,
 	}, nil
 }
 
@@ -477,15 +591,15 @@ func activityName(activities []store.Activity, id int64) string {
 	return ""
 }
 
-func resolveCardID(draft modelDraft, cards []store.Card) int64 {
-	if id := liveCardID(draft.CardID, cards); id != 0 {
-		return id
+func resolveCardRef(id int64, name, last4 string, cards []store.Card) int64 {
+	if live := liveCardID(id, cards); live != 0 {
+		return live
 	}
-	if last4 := last4Of(draft.CardLast4, draft.CardName); last4 != "" {
+	if tail := last4Of(last4, name); tail != "" {
 		var hit int64
 		n := 0
 		for _, card := range cards {
-			if card.Archived || card.Last4 != last4 {
+			if card.Archived || card.Last4 != tail {
 				continue
 			}
 			n++
@@ -495,7 +609,7 @@ func resolveCardID(draft modelDraft, cards []store.Card) int64 {
 			return hit
 		}
 	}
-	return matchCardName(draft.CardName, cards)
+	return matchCardName(name, cards)
 }
 
 func liveCardID(id int64, cards []store.Card) int64 {
@@ -530,22 +644,75 @@ func matchCardName(name string, cards []store.Card) int64 {
 	if utf8.RuneCountInString(name) < 2 {
 		return 0
 	}
+	folded := strings.ToLower(name)
 	var hit int64
 	n := 0
 	for _, card := range cards {
-		if card.Archived {
+		if card.Archived || !cardMatches(card, name, folded) {
 			continue
 		}
-		label := cardHint(card.Bank, card.Name, card.Last4)
-		if card.Bank == name || card.Name == name || label == name || strings.Contains(label, name) || strings.Contains(name, card.Bank) && card.Bank != "" {
-			n++
-			hit = card.ID
-		}
+		n++
+		hit = card.ID
 	}
 	if n == 1 {
 		return hit
 	}
 	return 0
+}
+
+func cardMatches(card store.Card, name, folded string) bool {
+	label := cardHint(card.Bank, card.Name, card.Last4)
+	if card.Bank == name || card.Name == name || label == name || strings.Contains(label, name) || strings.Contains(name, card.Bank) && card.Bank != "" {
+		return true
+	}
+	for _, alias := range bankAliases {
+		if strings.Contains(folded, alias.needle) && card.Bank == alias.bank {
+			return true
+		}
+	}
+	return false
+}
+
+// bankAliases covers English names that receipts use for a Chinese bank already in the book.
+var bankAliases = []struct{ needle, bank string }{
+	{"za bank", "众安银行"},
+}
+
+func canonicalCurrency(raw string) (string, bool) {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return "", false
+	}
+	upper := strings.ToUpper(text)
+	for _, code := range store.Currencies {
+		if upper == code {
+			return code, true
+		}
+	}
+	switch text {
+	case "人民币", "元":
+		return store.CurrencyCNY, true
+	case "港币", "港元":
+		return store.CurrencyHKD, true
+	case "美元":
+		return store.CurrencyUSD, true
+	case "加元":
+		return store.CurrencyCAD, true
+	case "台币", "新台币":
+		return store.CurrencyTWD, true
+	case "欧元":
+		return store.CurrencyEUR, true
+	case "英镑":
+		return store.CurrencyGBP, true
+	case "日元":
+		return store.CurrencyJPY, true
+	case "澳元":
+		return store.CurrencyAUD, true
+	case "新币", "新加坡元":
+		return store.CurrencySGD, true
+	default:
+		return "", false
+	}
 }
 
 func resolveCategory(draft modelDraft, categories []store.Category) (string, int64) {

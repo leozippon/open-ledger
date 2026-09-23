@@ -47,13 +47,15 @@ func TestRecognizePromptDocument(t *testing.T) {
 根据文字或图片整理家庭账本。
 
 一条对应一笔独立订单或一次独立付款。同一付款里的多件商品不要拆开；不同订单或不同付款不要合并。
+结售汇或跨境汇款拆成相邻两笔：先在汇出卡上兑换，再把买入的货币转到收款卡。手续费为零则不另记。
 
-只输出一个 JSON 对象：{"entries":[{kind,amount,category_id,category_name,activity_id,activity_name,card_id,card_name,date,note,shared}]}。
-kind 为 expense 或 income。amount 为人民币元，最多两位小数。
-category_id、activity_id 必须是下列编号，每笔单独选最合适的一个；活动看不出则选默认。
-card_id 能对应到卡则填编号，看不出则 0。
-date 为 YYYY-MM-DD。note 简短，只写这一笔，并模仿近期备注；没有则空字符串。
-shared 在全家一起时为 true，个人或看不出时为 false。
+只输出一个 JSON 对象：{"entries":[{kind,amount,currency,to_amount,to_currency,category_id,category_name,activity_id,activity_name,card_id,card_name,to_card_id,to_card_name,date,note,shared}]}。
+kind 为 expense、income、exchange 或 transfer。金额最多两位小数，货币用 CNY、HKD、USD 这类代码。
+支出和收入：amount 为人民币元。category_id、activity_id 必须是下列编号，每笔单独选；活动看不出则选默认。card_id 能对应则填，看不出则 0。
+兑换：amount 与 currency 是卖出，to_amount 与 to_currency 是买入，发生在 card_id 这一张卡上。
+转账：amount 与 currency 从 card_id 转到 to_card_id，两张卡都要从下列银行卡里对应上。
+date 为 YYYY-MM-DD。note 简短，只写这一笔；没有则空字符串。
+shared 在全家一起时为 true，个人、兑换、转账或看不出时为 false。
 
 分类
 1 支出 餐饮

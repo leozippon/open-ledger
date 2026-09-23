@@ -201,6 +201,84 @@ func TestRecognizeBindsActivityAndCard(t *testing.T) {
 	}
 }
 
+func TestRecognizeExchangeThenTransfer(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(body), "先在汇出卡上兑换") {
+			t.Errorf("prompt missing exchange rule: %s", body)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{"content": `{"entries":[{"kind":"exchange","amount":1342.05,"currency":"人民币","to_amount":1565.79,"to_currency":"港币","card_last4":"4102","date":"2026-09-23","note":"购汇"},{"kind":"transfer","amount":1565.79,"currency":"HKD","card_last4":"4102","to_card_name":"ZA Bank Limited","date":"2026-09-23","note":"汇入众安"}]}`},
+			}},
+		})
+	}))
+	t.Cleanup(upstream.Close)
+	srv, client := newServerWith(t, server.Config{
+		Secret:      []byte("test-session-secret"),
+		DeepSeekKey: "test-key",
+		DeepSeekURL: upstream.URL,
+	})
+	mustLogin(t, client, srv, adminUser, adminPassword)
+	response, fromPayload := do(t, client, http.MethodPost, srv.URL+"/api/cards", map[string]any{"kind": "debit", "bank": "工商银行", "last4": "4102"})
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("create source = %d %s", response.StatusCode, fromPayload)
+	}
+	fromID := int64(decode[map[string]any](t, fromPayload)["id"].(float64))
+	response, toPayload := do(t, client, http.MethodPost, srv.URL+"/api/cards", map[string]any{"kind": "debit", "bank": "众安银行", "name": "最股励", "last4": "0817"})
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("create dest = %d %s", response.StatusCode, toPayload)
+	}
+	toID := int64(decode[map[string]any](t, toPayload)["id"].(float64))
+
+	response, payload := do(t, client, http.MethodPost, srv.URL+"/api/recognize", map[string]any{"text": "跨境汇款"})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("recognize = %d %s", response.StatusCode, payload)
+	}
+	entries := decode[map[string]any](t, payload)["entries"].([]any)
+	if len(entries) != 2 {
+		t.Fatalf("entries = %s", payload)
+	}
+	exchange := entries[0].(map[string]any)
+	if exchange["kind"] != "exchange" || exchange["currency"] != "CNY" || exchange["to_currency"] != "HKD" || int64(exchange["card_id"].(float64)) != fromID {
+		t.Fatalf("exchange = %v", exchange)
+	}
+	if int64(exchange["amount"].(float64)) != 134205 || int64(exchange["to_amount"].(float64)) != 156579 {
+		t.Fatalf("exchange amounts = %v", exchange)
+	}
+	moved := entries[1].(map[string]any)
+	if moved["kind"] != "transfer" || moved["currency"] != "HKD" || int64(moved["card_id"].(float64)) != fromID || int64(moved["to_card_id"].(float64)) != toID {
+		t.Fatalf("transfer = %v", moved)
+	}
+	if int64(moved["amount"].(float64)) != 156579 {
+		t.Fatalf("transfer amount = %v", moved)
+	}
+}
+
+func TestRecognizeDropsUnpairedExchange(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{"content": `{"entries":[{"kind":"exchange","amount":100,"currency":"CNY","to_amount":110,"to_currency":"HKD","card_last4":"4102","date":"2026-09-23","note":"购汇"},{"kind":"transfer","amount":110,"currency":"HKD","card_last4":"4102","to_card_name":"没有这家银行","date":"2026-09-23","note":"汇出"}]}`},
+			}},
+		})
+	}))
+	t.Cleanup(upstream.Close)
+	srv, client := newServerWith(t, server.Config{
+		Secret:      []byte("test-session-secret"),
+		DeepSeekKey: "test-key",
+		DeepSeekURL: upstream.URL,
+	})
+	mustLogin(t, client, srv, adminUser, adminPassword)
+	if response, payload := do(t, client, http.MethodPost, srv.URL+"/api/cards", map[string]any{"kind": "debit", "bank": "工商银行", "last4": "4102"}); response.StatusCode != http.StatusCreated {
+		t.Fatalf("create source = %d %s", response.StatusCode, payload)
+	}
+	response, payload := do(t, client, http.MethodPost, srv.URL+"/api/recognize", map[string]any{"text": "跨境汇款"})
+	if response.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("unpaired remittance = %d %s, want 422", response.StatusCode, payload)
+	}
+}
+
 func TestRecognizeOrdersKey(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{

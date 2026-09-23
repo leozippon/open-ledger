@@ -379,11 +379,15 @@ export async function commitRecognized(ctx, got) {
       saved = await api.createTransaction({
         kind: item.kind,
         amount: item.amount,
+        currency: item.currency || '',
+        to_amount: item.to_amount || 0,
+        to_currency: item.to_currency || '',
         date: item.date,
         note: item.note ?? '',
-        category_id: item.category_id,
+        category_id: item.category_id || 0,
         activity_id: item.activity_id || 0,
         card_id: item.card_id || 0,
+        to_card_id: item.to_card_id || 0,
         shared: !!item.shared,
       });
       n += 1;
