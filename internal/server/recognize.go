@@ -124,6 +124,11 @@ func (s *Server) recognize(w http.ResponseWriter, r *http.Request, sess session)
 		writeErr(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	out.Entries = omitRepeated(out.Entries, recent)
+	if len(out.Entries) == 0 {
+		writeErr(w, http.StatusUnprocessableEntity, "没有识别到账目")
+		return
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -252,7 +257,8 @@ func apiErrorMessage(body []byte) string {
 const recognizeInstructions = `根据文字或图片整理家庭账本。
 
 一条对应一笔独立订单或一次独立付款。同一付款里的多件商品不要拆开；不同订单或不同付款不要合并。
-结售汇或跨境汇款拆成相邻两笔：先在汇出卡上兑换，再把买入的货币转到收款卡。手续费为零则不另记。
+结售汇或跨境汇款拆成相邻两笔：先在汇出卡上兑换，再把买入的货币转到收款卡。这不是支出或收入。手续费为零则不另记。
+近期账目只用来模仿备注写法，不要把已经记过的再输出。
 
 只输出一个 JSON 对象，每个键名都加双引号。例如 {"entries":[{"kind":"exchange","amount":100.00,"currency":"CNY","to_amount":110.00,"to_currency":"HKD","card_name":"汇出卡","date":"2026-09-23","note":"购汇","shared":false}]}。
 编号只能从下面的列表原样抄，不要沿用例子里的数字。
@@ -444,6 +450,42 @@ func decodeDrafts(text string) ([]modelDraft, error) {
 		return nil, fmt.Errorf("empty model draft")
 	}
 	return []modelDraft{one}, nil
+}
+
+func omitRepeated(entries []recognizeEntry, recent []store.Transaction) []recognizeEntry {
+	kept := make([]recognizeEntry, 0, len(entries))
+	for _, entry := range entries {
+		if remittanceAsCash(entry) || alreadyRecorded(entry, recent) {
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	return kept
+}
+
+func remittanceAsCash(entry recognizeEntry) bool {
+	if entry.Kind != store.KindExpense && entry.Kind != store.KindIncome {
+		return false
+	}
+	switch strings.TrimSpace(entry.Note) {
+	case "购汇", "换汇", "结售汇", "跨境汇款", "跨境支付":
+		return true
+	default:
+		return false
+	}
+}
+
+func alreadyRecorded(entry recognizeEntry, recent []store.Transaction) bool {
+	note := strings.TrimSpace(entry.Note)
+	if note == "" {
+		return false
+	}
+	for _, tx := range recent {
+		if tx.Kind == entry.Kind && tx.Amount == entry.Amount && tx.Date == entry.Date && strings.TrimSpace(tx.Note) == note {
+			return true
+		}
+	}
+	return false
 }
 
 func capDrafts(drafts []modelDraft) []modelDraft {

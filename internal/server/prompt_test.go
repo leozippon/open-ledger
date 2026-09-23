@@ -47,7 +47,8 @@ func TestRecognizePromptDocument(t *testing.T) {
 根据文字或图片整理家庭账本。
 
 一条对应一笔独立订单或一次独立付款。同一付款里的多件商品不要拆开；不同订单或不同付款不要合并。
-结售汇或跨境汇款拆成相邻两笔：先在汇出卡上兑换，再把买入的货币转到收款卡。手续费为零则不另记。
+结售汇或跨境汇款拆成相邻两笔：先在汇出卡上兑换，再把买入的货币转到收款卡。这不是支出或收入。手续费为零则不另记。
+近期账目只用来模仿备注写法，不要把已经记过的再输出。
 
 只输出一个 JSON 对象，每个键名都加双引号。例如 {"entries":[{"kind":"exchange","amount":100.00,"currency":"CNY","to_amount":110.00,"to_currency":"HKD","card_name":"汇出卡","date":"2026-09-23","note":"购汇","shared":false}]}。
 编号只能从下面的列表原样抄，不要沿用例子里的数字。
@@ -96,6 +97,21 @@ shared 在全家一起时为 true，个人、兑换、转账或看不出时为 f
 	}
 	if user := buildUserText("喜茶 26 元", time.Date(2026, 9, 21, 0, 0, 0, 0, time.UTC)); user != "今天是 2026-09-21。\n喜茶 26 元" {
 		t.Fatalf("sms user text = %q", user)
+	}
+}
+
+func TestOmitRepeatedBills(t *testing.T) {
+	entries := []recognizeEntry{
+		{Kind: store.KindExpense, Amount: 156579, Date: "2026-09-24", Note: "跨境汇款"},
+		{Kind: store.KindExpense, Amount: 526, Date: "2026-09-23", Note: "论文下载"},
+		{Kind: store.KindExchange, Amount: 134205, Date: "2026-09-24", Note: "购汇"},
+	}
+	recent := []store.Transaction{
+		{Kind: store.KindExpense, Amount: 526, Date: "2026-09-23", Note: "论文下载"},
+	}
+	got := omitRepeated(entries, recent)
+	if len(got) != 1 || got[0].Kind != store.KindExchange {
+		t.Fatalf("kept = %+v", got)
 	}
 }
 

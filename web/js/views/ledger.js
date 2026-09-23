@@ -8,8 +8,8 @@ export function render(ctx) {
   return frag([
     ctx.state.me?.recognize ? recognizeRow((got) => commitRecognized(ctx, got)) : null,
     summaryCard(ctx),
-    moveBox(ctx),
     activityBoxes(ctx),
+    moveBox(ctx),
   ]);
 }
 
