@@ -78,6 +78,7 @@ type TxFilter struct {
 	UserID     int64
 	SharedOnly bool
 	Query      string
+	MovesOnly  bool
 }
 
 const txColumns = `
@@ -102,7 +103,9 @@ func (s *Store) Transactions(f TxFilter) ([]Transaction, error) {
 	from, to := monthRange(f.Month)
 	where := []string{"t.date BETWEEN ? AND ?"}
 	args := []any{from, to}
-	if f.Kind != "" {
+	if f.MovesOnly {
+		where = append(where, "t.kind IN ('transfer', 'exchange')")
+	} else if f.Kind != "" {
 		if err := checkKind(f.Kind); err != nil {
 			return nil, err
 		}

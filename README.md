@@ -37,7 +37,7 @@
 
 <p align="center"><img src="docs/screenshots/stats.png" alt="统计" width="320"></p>
 
-记一笔用自定义数字键盘。支出和收入挂活动，转账和兑换不算收支。
+记一笔用自定义数字键盘。支出和收入挂活动，转账和兑换不算收支，明细里单独列在余额下面。
 
 <p align="center"><img src="docs/screenshots/entry.png" alt="记一笔" width="320"></p>
 

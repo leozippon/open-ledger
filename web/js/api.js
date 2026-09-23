@@ -50,6 +50,7 @@ export const api = {
   deleteUser: (id) => call('DELETE', `/api/users/${id}`),
 
   transactions: (params) => call('GET', `/api/transactions${query(params)}`),
+  moves: (month, userId, shared) => call('GET', `/api/transactions${query({ month, user_id: userId, shared: shared ? 1 : undefined, moves: 1 })}`),
   createTransaction: (body) => call('POST', '/api/transactions', body),
   updateTransaction: (id, body) => call('PUT', `/api/transactions/${id}`, body),
   deleteTransaction: (id) => call('DELETE', `/api/transactions/${id}`),

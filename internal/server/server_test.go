@@ -1201,6 +1201,45 @@ func mustCategories(t *testing.T, st *store.Store) []store.Category {
 	return cats
 }
 
+func TestListMovesOmitsIncomeAndExpense(t *testing.T) {
+	srv, client := newServer(t)
+	mustLogin(t, client, srv, adminUser, adminPassword)
+	_, food := do(t, client, http.MethodGet, srv.URL+"/api/categories", nil)
+	categoryID := pickCategory(t, decode[[]store.Category](t, food), store.KindExpense)
+	response, fromPayload := do(t, client, http.MethodPost, srv.URL+"/api/cards", map[string]any{"kind": "debit", "bank": "工商银行", "last4": "4102"})
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("source card = %d %s", response.StatusCode, fromPayload)
+	}
+	fromID := decode[store.Card](t, fromPayload).ID
+	response, toPayload := do(t, client, http.MethodPost, srv.URL+"/api/cards", map[string]any{"kind": "debit", "bank": "众安银行", "last4": "0817"})
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("dest card = %d %s", response.StatusCode, toPayload)
+	}
+	toID := decode[store.Card](t, toPayload).ID
+	if response, payload := do(t, client, http.MethodPost, srv.URL+"/api/transactions", map[string]any{
+		"kind": "expense", "amount": 100, "category_id": categoryID, "date": "2026-09-24", "note": "午饭",
+	}); response.StatusCode != http.StatusCreated {
+		t.Fatalf("expense = %d %s", response.StatusCode, payload)
+	}
+	if response, payload := do(t, client, http.MethodPost, srv.URL+"/api/transactions", map[string]any{
+		"kind": "exchange", "amount": 134205, "to_amount": 156579, "currency": "CNY", "to_currency": "HKD",
+		"card_id": fromID, "date": "2026-09-24", "note": "购汇",
+	}); response.StatusCode != http.StatusCreated {
+		t.Fatalf("exchange = %d %s", response.StatusCode, payload)
+	}
+	if response, payload := do(t, client, http.MethodPost, srv.URL+"/api/transactions", map[string]any{
+		"kind": "transfer", "amount": 156579, "currency": "HKD", "card_id": fromID, "to_card_id": toID,
+		"date": "2026-09-24", "note": "跨境汇款",
+	}); response.StatusCode != http.StatusCreated {
+		t.Fatalf("transfer = %d %s", response.StatusCode, payload)
+	}
+	_, payload := do(t, client, http.MethodGet, srv.URL+"/api/transactions?month=2026-09&moves=1", nil)
+	moves := decode[[]store.Transaction](t, payload)
+	if len(moves) != 2 || moves[0].Kind != store.KindTransfer || moves[1].Kind != store.KindExchange {
+		t.Fatalf("moves = %+v", moves)
+	}
+}
+
 func cardFund(card store.Card, currency string) int64 {
 	for _, fund := range card.Funds {
 		if fund.Currency == currency {

@@ -44,6 +44,7 @@ const state = {
   cards: [],
   activities: [],
   activityMonths: [],
+  moves: [],
   summary: emptySummary(currentMonth()),
   statsSummary: null,
   statsTrend: [],
@@ -84,18 +85,19 @@ async function reload() {
     const scoped = member || shared;
     const userId = member || undefined;
     const activityId = state.statsActivity || undefined;
-    const [me, categories, cards, users, activities, activityMonths, summary, memberSummary, statsPack] = await Promise.all([
+    const [me, categories, cards, users, activities, activityMonths, moves, summary, memberSummary, statsPack] = await Promise.all([
       api.me(),
       api.categories(),
       api.cards(),
       api.users(),
       api.activities(),
       api.activityMonths(state.month, userId, shared),
+      api.moves(state.month, userId, shared),
       api.summary(state.month),
       scoped ? api.summary(state.month, userId, shared) : null,
       state.pane === 'stats' ? loadStats(userId, shared, activityId) : Promise.resolve({ statsSummary: null, statsTrend: [] }),
     ]);
-    Object.assign(state, { me, categories, cards, users, activities, activityMonths, summary, memberSummary }, statsPack);
+    Object.assign(state, { me, categories, cards, users, activities, activityMonths, moves, summary, memberSummary }, statsPack);
     if (state.ledgerActivity && !activities.some((item) => item.id === state.ledgerActivity)) {
       state.ledgerActivity = 0;
     }

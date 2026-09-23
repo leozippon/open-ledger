@@ -8,6 +8,7 @@ export function render(ctx) {
   return frag([
     ctx.state.me?.recognize ? recognizeRow((got) => commitRecognized(ctx, got)) : null,
     summaryCard(ctx),
+    moveBox(ctx),
     activityBoxes(ctx),
   ]);
 }
@@ -153,6 +154,15 @@ function summaryCell(label, value, cls = '') {
   return el('div', { class: 'summary-cell' }, [
     el('span', { text: label }),
     el('strong', { class: cls, text: value }),
+  ]);
+}
+
+function moveBox(ctx) {
+  const list = ctx.state.moves || [];
+  if (!list.length) return null;
+  return frag([
+    el('div', { class: 'day-head' }, [el('span', { text: '换汇和转账' })]),
+    entryList(ctx, list, ''),
   ]);
 }
 

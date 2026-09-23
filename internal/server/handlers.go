@@ -55,6 +55,7 @@ func (s *Server) listTransactions(w http.ResponseWriter, r *http.Request, sess s
 		UserID:     queryInt(r, "user_id"),
 		SharedOnly: queryFlag(r, "shared"),
 		Query:      q.Get("q"),
+		MovesOnly:  queryFlag(r, "moves"),
 	}
 	if filter.Month == "" {
 		filter.Month = time.Now().Format("2006-01")
