@@ -49,8 +49,8 @@ func TestRecognizePromptDocument(t *testing.T) {
 一条对应一笔独立订单或一次独立付款。同一付款里的多件商品不要拆开；不同订单或不同付款不要合并。
 结售汇或跨境汇款拆成相邻两笔：先在汇出卡上兑换，再把买入的货币转到收款卡。手续费为零则不另记。
 
-只输出一个 JSON 对象：{"entries":[{kind,amount,currency,to_amount,to_currency,category_id,category_name,activity_id,activity_name,card_id,card_name,to_card_id,to_card_name,date,note,shared}]}。
-kind 为 expense、income、exchange 或 transfer。金额最多两位小数，货币用 CNY、HKD、USD 这类代码。
+只输出一个 JSON 对象，每个键名都加双引号。例如 {"entries":[{"kind":"exchange","amount":100.00,"currency":"CNY","to_amount":110.00,"to_currency":"HKD","card_id":1,"to_card_id":2,"category_id":0,"date":"2026-09-23","note":"购汇","shared":false}]}。
+kind 为 expense、income、exchange 或 transfer。金额写数字且必须大于 0，不要千分位逗号；货币用 CNY、HKD、USD 这类代码。
 支出和收入：amount 为人民币元。category_id、activity_id 必须是下列编号，每笔单独选；活动看不出则选默认。card_id 能对应则填，看不出则 0。
 兑换：amount 与 currency 是卖出，to_amount 与 to_currency 是买入，发生在 card_id 这一张卡上。
 转账：amount 与 currency 从 card_id 转到 to_card_id，两张卡都要从下列银行卡里对应上。
@@ -95,5 +95,32 @@ shared 在全家一起时为 true，个人、兑换、转账或看不出时为 f
 	}
 	if user := buildUserText("喜茶 26 元", time.Date(2026, 9, 21, 0, 0, 0, 0, time.UTC)); user != "今天是 2026-09-21。\n喜茶 26 元" {
 		t.Fatalf("sms user text = %q", user)
+	}
+}
+
+func TestParseLooseRemittanceJSON(t *testing.T) {
+	drafts, err := parseModelJSON(`{"entries":[{kind:"exchange",amount:"1,342.05",currency:"CNY",to_amount:"1,565.79",to_currency:"港币",card_last4:"4102"},{kind:"transfer",amount:1565.79,currency:"HKD",card_last4:"4102",to_card_name:"ZA Bank Limited"}]}`)
+	if err != nil {
+		t.Fatalf("parse loose json: %v", err)
+	}
+	if len(drafts) != 2 || drafts[0].Kind != "exchange" || drafts[1].Kind != "transfer" {
+		t.Fatalf("drafts = %+v", drafts)
+	}
+	cards := []store.Card{
+		{ID: 1, Kind: store.CardDebit, Bank: "工商银行", Last4: "4102"},
+		{ID: 4, Kind: store.CardDebit, Bank: "众安银行", Name: "最股励", Last4: "0817"},
+	}
+	out, err := bindDrafts(drafts, nil, nil, cards)
+	if err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	if len(out.Entries) != 2 {
+		t.Fatalf("entries = %+v", out.Entries)
+	}
+	if out.Entries[0].Amount != 134205 || out.Entries[0].ToAmount != 156579 || out.Entries[0].Currency != "CNY" || out.Entries[0].ToCurrency != "HKD" || out.Entries[0].CardID != 1 {
+		t.Fatalf("exchange = %+v", out.Entries[0])
+	}
+	if out.Entries[1].Kind != store.KindTransfer || out.Entries[1].Amount != 156579 || out.Entries[1].CardID != 1 || out.Entries[1].ToCardID != 4 {
+		t.Fatalf("transfer = %+v", out.Entries[1])
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -222,8 +223,8 @@ const recognizeInstructions = `根据文字或图片整理家庭账本。
 一条对应一笔独立订单或一次独立付款。同一付款里的多件商品不要拆开；不同订单或不同付款不要合并。
 结售汇或跨境汇款拆成相邻两笔：先在汇出卡上兑换，再把买入的货币转到收款卡。手续费为零则不另记。
 
-只输出一个 JSON 对象：{"entries":[{kind,amount,currency,to_amount,to_currency,category_id,category_name,activity_id,activity_name,card_id,card_name,to_card_id,to_card_name,date,note,shared}]}。
-kind 为 expense、income、exchange 或 transfer。金额最多两位小数，货币用 CNY、HKD、USD 这类代码。
+只输出一个 JSON 对象，每个键名都加双引号。例如 {"entries":[{"kind":"exchange","amount":100.00,"currency":"CNY","to_amount":110.00,"to_currency":"HKD","card_id":1,"to_card_id":2,"category_id":0,"date":"2026-09-23","note":"购汇","shared":false}]}。
+kind 为 expense、income、exchange 或 transfer。金额写数字且必须大于 0，不要千分位逗号；货币用 CNY、HKD、USD 这类代码。
 支出和收入：amount 为人民币元。category_id、activity_id 必须是下列编号，每笔单独选；活动看不出则选默认。card_id 能对应则填，看不出则 0。
 兑换：amount 与 currency 是卖出，to_amount 与 to_currency 是买入，发生在 card_id 这一张卡上。
 转账：amount 与 currency 从 card_id 转到 to_card_id，两张卡都要从下列银行卡里对应上。
@@ -344,8 +345,35 @@ func buildUserText(text string, now time.Time) string {
 	return head + "\n" + text
 }
 
+var (
+	bareKey   = regexp.MustCompile(`([{\[,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:`)
+	thousands = regexp.MustCompile(`(\d),(\d{3})`)
+)
+
 func parseModelJSON(raw string) ([]modelDraft, error) {
 	text := extractJSON(raw)
+	drafts, err := decodeDrafts(text)
+	if err == nil {
+		return drafts, nil
+	}
+	if loose := loosenModelJSON(text); loose != text {
+		if drafts, err2 := decodeDrafts(loose); err2 == nil {
+			return drafts, nil
+		}
+	}
+	return nil, err
+}
+
+func loosenModelJSON(text string) string {
+	text = bareKey.ReplaceAllString(text, `$1"$2":`)
+	for prev := ""; prev != text; {
+		prev = text
+		text = thousands.ReplaceAllString(text, `$1$2`)
+	}
+	return text
+}
+
+func decodeDrafts(text string) ([]modelDraft, error) {
 	var wrap struct {
 		Entries []modelDraft `json:"entries"`
 	}
@@ -819,11 +847,11 @@ func parseModelAmount(raw json.RawMessage) (int64, error) {
 			return 0, fmt.Errorf("没有识别到金额")
 		}
 		text = quoted
-	} else {
-		n, err := strconv.ParseFloat(text, 64)
-		if err != nil {
-			return 0, fmt.Errorf("没有识别到金额")
-		}
+	}
+	text = strings.ReplaceAll(text, ",", "")
+	text = strings.ReplaceAll(text, "，", "")
+	text = strings.TrimSpace(text)
+	if n, err := strconv.ParseFloat(text, 64); err == nil {
 		text = strconv.FormatFloat(n, 'f', -1, 64)
 	}
 	cents, err := money.ParseYuan(text)
