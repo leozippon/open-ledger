@@ -5,7 +5,7 @@ import { toast } from './ui.js';
 import * as homeView from './views/home.js';
 import * as settingsView from './views/settings.js';
 import { openEntry } from './views/entry.js';
-import { openSearch, refreshActivitySheet } from './views/ledger.js';
+import { openSearch, refreshActivitySheet, refreshMoveSheet } from './views/ledger.js';
 
 watchTheme();
 
@@ -109,6 +109,7 @@ async function reload() {
     }
     render();
     await refreshActivitySheet(ctx);
+    refreshMoveSheet(ctx);
   } catch (error) {
     if (error.status !== 401) toast(error.message, true);
   }

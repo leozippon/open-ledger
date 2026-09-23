@@ -160,15 +160,73 @@ function summaryCell(label, value, cls = '') {
 function moveBox(ctx) {
   const list = ctx.state.moves || [];
   if (!list.length) return null;
-  return frag([
-    el('div', { class: 'day-head' }, [el('span', { text: '换汇和转账' })]),
-    entryList(ctx, list, ''),
+  const exchanges = list.filter((tx) => tx.kind === 'exchange').length;
+  const transfers = list.length - exchanges;
+  const bits = [];
+  if (exchanges) bits.push(`购汇 ${exchanges}`);
+  if (transfers) bits.push(`转账 ${transfers}`);
+  return el('div', { class: 'card activity-box' }, [
+    el('div', {
+      class: 'activity-box-top tappable',
+      onclick: () => openMoveSheet(ctx),
+    }, [
+      el('div', { class: 'activity-box-head' }, [
+        el('span', { class: 'activity-box-name', text: '换汇和转账' }),
+        el('span', { class: 'row-chevron', text: '›' }),
+      ]),
+      el('div', { class: 'activity-box-meta' }, [
+        el('span', { text: bits.join(' · ') }),
+        el('span', { text: '不计入收支' }),
+      ]),
+    ]),
+    el('div', { class: 'activity-preview' }, list.slice(0, 3).map((tx) => entryRow(ctx, tx))),
   ]);
+}
+
+let moveSheet = null;
+
+function openMoveSheet(ctx) {
+  if (activitySheet) activitySheet.close();
+  if (moveSheet) moveSheet.close();
+  const list = ctx.state.moves || [];
+  moveSheet = openSheet({
+    title: '换汇和转账',
+    body: moveSheetBody(ctx, list),
+    onClose: () => { moveSheet = null; },
+  });
+}
+
+export function refreshMoveSheet(ctx) {
+  if (!moveSheet) return;
+  const list = ctx.state.moves || [];
+  if (!list.length) {
+    moveSheet.close();
+    return;
+  }
+  moveSheet.setBody(moveSheetBody(ctx, list));
+}
+
+function moveSheetBody(ctx, list) {
+  return [
+    card([
+      el('div', { class: 'fx-head' }, [
+        el('span', { class: 'fx-code', text: '本月' }),
+        el('span', { class: 'fx-balance', text: `${list.length} 笔` }),
+      ]),
+      el('div', { class: 'fx-month' }, [
+        el('span', { text: '不计入收支' }),
+      ]),
+    ]),
+    el('div', { class: 'search-results' }, [entryList(ctx, list, '')]),
+  ];
 }
 
 function activityBoxes(ctx) {
   const list = ctx.state.activityMonths || [];
-  if (!list.length) return card(empty('🌤️', '这个月还没有活动记录，点下方 + 记一笔'));
+  if (!list.length) {
+    if ((ctx.state.moves || []).length) return null;
+    return card(empty('🌤️', '这个月还没有活动记录，点下方 + 记一笔'));
+  }
   return frag(list.map((item) => activityBox(ctx, item)));
 }
 
@@ -226,6 +284,7 @@ let activitySheet = null;
 let activityItem = null;
 
 async function openActivitySheet(ctx, item) {
+  if (moveSheet) moveSheet.close();
   if (activitySheet) activitySheet.close();
   ctx.state.ledgerActivity = item.id;
   activityItem = item;
