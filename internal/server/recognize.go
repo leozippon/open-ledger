@@ -144,7 +144,7 @@ func (s *Server) callDeepSeek(ctx context.Context, text, image string, categorie
 		},
 		"response_format": map[string]string{"type": "json_object"},
 		"thinking":        map[string]string{"type": "disabled"},
-		"max_tokens":      1600,
+		"max_tokens":      4000,
 	})
 	if err != nil {
 		return nil, err
@@ -154,7 +154,23 @@ func (s *Server) callDeepSeek(ctx context.Context, text, image string, categorie
 	if base == "" {
 		base = deepSeekDefault
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/chat/completions", bytes.NewReader(payload))
+	var last error
+	for attempt := 1; attempt <= 2; attempt++ {
+		drafts, err := s.postDeepSeek(ctx, base+"/chat/completions", payload)
+		if err == nil {
+			return drafts, nil
+		}
+		last = err
+		if attempt == 2 || !strings.Contains(err.Error(), "parse model json") {
+			return nil, err
+		}
+		log.Printf("ledger: recognize: retry after %v", err)
+	}
+	return nil, last
+}
+
+func (s *Server) postDeepSeek(ctx context.Context, url string, payload []byte) ([]modelDraft, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
@@ -177,8 +193,10 @@ func (s *Server) callDeepSeek(ctx context.Context, text, image string, categorie
 
 	var envelope struct {
 		Choices []struct {
+			Finish  string `json:"finish_reason"`
 			Message struct {
-				Content string `json:"content"`
+				Content   string `json:"content"`
+				Reasoning string `json:"reasoning_content"`
 			} `json:"message"`
 		} `json:"choices"`
 	}
@@ -188,11 +206,24 @@ func (s *Server) callDeepSeek(ctx context.Context, text, image string, categorie
 	if len(envelope.Choices) == 0 {
 		return nil, fmt.Errorf("empty deepseek response")
 	}
-	drafts, err := parseModelJSON(envelope.Choices[0].Message.Content)
+	choice := envelope.Choices[0]
+	content := strings.TrimSpace(choice.Message.Content)
+	if content == "" {
+		content = strings.TrimSpace(choice.Message.Reasoning)
+	}
+	drafts, err := parseModelJSON(content)
 	if err != nil {
-		return nil, fmt.Errorf("parse model json: %w", err)
+		return nil, fmt.Errorf("parse model json: %w finish=%s content=%q", err, choice.Finish, clip(content, 180))
 	}
 	return drafts, nil
+}
+
+func clip(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n])
 }
 
 func apiErrorMessage(body []byte) string {
@@ -223,7 +254,8 @@ const recognizeInstructions = `根据文字或图片整理家庭账本。
 一条对应一笔独立订单或一次独立付款。同一付款里的多件商品不要拆开；不同订单或不同付款不要合并。
 结售汇或跨境汇款拆成相邻两笔：先在汇出卡上兑换，再把买入的货币转到收款卡。手续费为零则不另记。
 
-只输出一个 JSON 对象，每个键名都加双引号。例如 {"entries":[{"kind":"exchange","amount":100.00,"currency":"CNY","to_amount":110.00,"to_currency":"HKD","card_id":1,"to_card_id":2,"category_id":0,"date":"2026-09-23","note":"购汇","shared":false}]}。
+只输出一个 JSON 对象，每个键名都加双引号。例如 {"entries":[{"kind":"exchange","amount":100.00,"currency":"CNY","to_amount":110.00,"to_currency":"HKD","card_name":"汇出卡","date":"2026-09-23","note":"购汇","shared":false}]}。
+编号只能从下面的列表原样抄，不要沿用例子里的数字。
 kind 为 expense、income、exchange 或 transfer。金额写数字且必须大于 0，不要千分位逗号；货币用 CNY、HKD、USD 这类代码。
 支出和收入：amount 为人民币元。category_id、activity_id 必须是下列编号，每笔单独选；活动看不出则选默认。card_id 能对应则填，看不出则 0。
 兑换：amount 与 currency 是卖出，to_amount 与 to_currency 是买入，发生在 card_id 这一张卡上。
@@ -364,6 +396,14 @@ func parseModelJSON(raw string) ([]modelDraft, error) {
 	return nil, err
 }
 
+func neutralizeNulls(text string) string {
+	for _, key := range []string{"card_id", "to_card_id", "category_id", "activity_id"} {
+		text = strings.ReplaceAll(text, `"`+key+`":null`, `"`+key+`":0`)
+		text = strings.ReplaceAll(text, `"`+key+`": null`, `"`+key+`":0`)
+	}
+	return text
+}
+
 func loosenModelJSON(text string) string {
 	text = bareKey.ReplaceAllString(text, `$1"$2":`)
 	for prev := ""; prev != text; {
@@ -374,6 +414,7 @@ func loosenModelJSON(text string) string {
 }
 
 func decodeDrafts(text string) ([]modelDraft, error) {
+	text = neutralizeNulls(text)
 	var wrap struct {
 		Entries []modelDraft `json:"entries"`
 	}
@@ -522,6 +563,9 @@ func bindExchange(draft modelDraft, cards []store.Card, date, note string) (reco
 	}
 	cardID := resolveCardRef(draft.CardID, draft.CardName, draft.CardLast4, cards)
 	if cardID == 0 {
+		cardID = resolveCardRef(0, note, note, cards)
+	}
+	if cardID == 0 {
 		return recognizeEntry{}, fmt.Errorf("无法对应银行卡")
 	}
 	return recognizeEntry{
@@ -547,7 +591,16 @@ func bindTransfer(draft modelDraft, cards []store.Card, date, note string) (reco
 	}
 	fromID := resolveCardRef(draft.CardID, draft.CardName, draft.CardLast4, cards)
 	toID := resolveCardRef(draft.ToCardID, draft.ToCardName, draft.ToCardLast4, cards)
-	if fromID == 0 || toID == 0 || fromID == toID {
+	if fromID == 0 {
+		fromID = resolveCardRef(0, "", note, cards)
+	}
+	if toID == 0 {
+		toID = matchCardName(note, cards)
+	}
+	if toID == fromID {
+		toID = 0
+	}
+	if fromID == 0 || toID == 0 {
 		return recognizeEntry{}, fmt.Errorf("无法对应转账银行卡")
 	}
 	return recognizeEntry{

@@ -49,7 +49,8 @@ func TestRecognizePromptDocument(t *testing.T) {
 一条对应一笔独立订单或一次独立付款。同一付款里的多件商品不要拆开；不同订单或不同付款不要合并。
 结售汇或跨境汇款拆成相邻两笔：先在汇出卡上兑换，再把买入的货币转到收款卡。手续费为零则不另记。
 
-只输出一个 JSON 对象，每个键名都加双引号。例如 {"entries":[{"kind":"exchange","amount":100.00,"currency":"CNY","to_amount":110.00,"to_currency":"HKD","card_id":1,"to_card_id":2,"category_id":0,"date":"2026-09-23","note":"购汇","shared":false}]}。
+只输出一个 JSON 对象，每个键名都加双引号。例如 {"entries":[{"kind":"exchange","amount":100.00,"currency":"CNY","to_amount":110.00,"to_currency":"HKD","card_name":"汇出卡","date":"2026-09-23","note":"购汇","shared":false}]}。
+编号只能从下面的列表原样抄，不要沿用例子里的数字。
 kind 为 expense、income、exchange 或 transfer。金额写数字且必须大于 0，不要千分位逗号；货币用 CNY、HKD、USD 这类代码。
 支出和收入：amount 为人民币元。category_id、activity_id 必须是下列编号，每笔单独选；活动看不出则选默认。card_id 能对应则填，看不出则 0。
 兑换：amount 与 currency 是卖出，to_amount 与 to_currency 是买入，发生在 card_id 这一张卡上。
@@ -95,6 +96,24 @@ shared 在全家一起时为 true，个人、兑换、转账或看不出时为 f
 	}
 	if user := buildUserText("喜茶 26 元", time.Date(2026, 9, 21, 0, 0, 0, 0, time.UTC)); user != "今天是 2026-09-21。\n喜茶 26 元" {
 		t.Fatalf("sms user text = %q", user)
+	}
+}
+
+func TestParseNullCardAndNote(t *testing.T) {
+	drafts, err := parseModelJSON(`{"entries":[{"kind":"exchange","amount":1342.05,"currency":"CNY","to_amount":1565.79,"to_currency":"HKD","card_id":null,"date":"2026-09-24","note":"汇出卡6217****4102"},{"kind":"transfer","amount":1565.79,"currency":"HKD","card_id":null,"to_card_id":null,"card_last4":"4102","date":"2026-09-24","note":"汇入 ZA Bank Limited"}]}`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	cards := []store.Card{
+		{ID: 1, Kind: store.CardDebit, Bank: "工商银行", Last4: "4102"},
+		{ID: 4, Kind: store.CardDebit, Bank: "众安银行", Last4: "0817"},
+	}
+	out, err := bindDrafts(drafts, nil, nil, cards)
+	if err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	if out.Entries[0].CardID != 1 || out.Entries[1].CardID != 1 || out.Entries[1].ToCardID != 4 {
+		t.Fatalf("entries = %+v", out.Entries)
 	}
 }
 
