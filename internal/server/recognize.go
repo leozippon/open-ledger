@@ -256,12 +256,11 @@ func apiErrorMessage(body []byte) string {
 
 const recognizeInstructions = `根据文字或图片整理家庭账本。
 
-一条对应一笔独立订单或一次独立付款。同一付款里的多件商品不要拆开；不同订单或不同付款不要合并。
+只整理这次文字或图片里的账单。一条对应一笔独立订单或一次独立付款。同一付款里的多件商品不要拆开；不同订单或不同付款不要合并。
 结售汇或跨境汇款拆成相邻两笔：先在汇出卡上兑换，再把买入的货币转到收款卡。这不是支出或收入。手续费为零则不另记。
-近期账目只用来模仿备注写法，不要把已经记过的再输出。
 
 只输出一个 JSON 对象，每个键名都加双引号。例如 {"entries":[{"kind":"exchange","amount":100.00,"currency":"CNY","to_amount":110.00,"to_currency":"HKD","card_name":"汇出卡","date":"2026-09-23","note":"购汇","shared":false}]}。
-编号只能从下面的列表原样抄，不要沿用例子里的数字。
+编号必须来自下列分类、活动和银行卡，不要沿用例子里的数字。
 kind 为 expense、income、exchange 或 transfer。金额写数字且必须大于 0，不要千分位逗号；货币用 CNY、HKD、USD 这类代码。
 支出和收入：amount 为人民币元。category_id、activity_id 必须是下列编号，每笔单独选；活动看不出则选默认。card_id 能对应则填，看不出则 0。
 兑换：amount 与 currency 是卖出，to_amount 与 to_currency 是买入，发生在 card_id 这一张卡上。
@@ -300,14 +299,25 @@ func systemPrompt(categories []store.Category, activities []store.Activity, card
 	if live == 0 {
 		b.WriteString("（暂无）\n")
 	}
-	b.WriteString("\n近期\n")
-	if len(recent) == 0 {
-		b.WriteString("（暂无）\n")
-		return b.String()
-	}
+	b.WriteString("\n已记备注\n")
+	b.WriteString("这些已经入账，不要输出，只可模仿用词。\n")
+	seen := map[string]bool{}
+	n := 0
 	for _, tx := range recent {
-		b.WriteString(recentLine(tx))
+		note := strings.TrimSpace(tx.Note)
+		if note == "" || seen[note] {
+			continue
+		}
+		seen[note] = true
+		b.WriteString(note)
 		b.WriteByte('\n')
+		n++
+		if n == 12 {
+			break
+		}
+	}
+	if n == 0 {
+		b.WriteString("（暂无）\n")
 	}
 	return b.String()
 }
@@ -319,30 +329,6 @@ func activityLine(activity store.Activity) string {
 	}
 	if start := strings.TrimSpace(activity.StartDate); start != "" && !activity.IsDefault {
 		parts = append(parts, start)
-	}
-	return strings.Join(parts, " ")
-}
-
-func recentLine(tx store.Transaction) string {
-	parts := []string{
-		tx.Date,
-		kindLabel(tx.Kind),
-		fmt.Sprintf("%.2f", float64(tx.Amount)/100),
-		tx.CategoryName,
-	}
-	if name := strings.TrimSpace(tx.ActivityName); name != "" {
-		parts = append(parts, name)
-	}
-	if card := cardHint(tx.CardBank, tx.CardName, tx.CardLast4); card != "" {
-		parts = append(parts, card)
-	}
-	if note := strings.TrimSpace(tx.Note); note != "" {
-		parts = append(parts, note)
-	}
-	if tx.Shared {
-		parts = append(parts, "共同")
-	} else {
-		parts = append(parts, "个人")
 	}
 	return strings.Join(parts, " ")
 }
@@ -376,7 +362,7 @@ func kindLabel(kind string) string {
 }
 
 func buildUserText(text string, now time.Time) string {
-	head := "今天是 " + now.Format("2006-01-02") + "。"
+	head := "只整理这次账单。今天是 " + now.Format("2006-01-02") + "。"
 	if text == "" {
 		return head
 	}

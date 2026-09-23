@@ -46,12 +46,11 @@ func TestRecognizePromptDocument(t *testing.T) {
 	want := strings.TrimPrefix(`
 根据文字或图片整理家庭账本。
 
-一条对应一笔独立订单或一次独立付款。同一付款里的多件商品不要拆开；不同订单或不同付款不要合并。
+只整理这次文字或图片里的账单。一条对应一笔独立订单或一次独立付款。同一付款里的多件商品不要拆开；不同订单或不同付款不要合并。
 结售汇或跨境汇款拆成相邻两笔：先在汇出卡上兑换，再把买入的货币转到收款卡。这不是支出或收入。手续费为零则不另记。
-近期账目只用来模仿备注写法，不要把已经记过的再输出。
 
 只输出一个 JSON 对象，每个键名都加双引号。例如 {"entries":[{"kind":"exchange","amount":100.00,"currency":"CNY","to_amount":110.00,"to_currency":"HKD","card_name":"汇出卡","date":"2026-09-23","note":"购汇","shared":false}]}。
-编号只能从下面的列表原样抄，不要沿用例子里的数字。
+编号必须来自下列分类、活动和银行卡，不要沿用例子里的数字。
 kind 为 expense、income、exchange 或 transfer。金额写数字且必须大于 0，不要千分位逗号；货币用 CNY、HKD、USD 这类代码。
 支出和收入：amount 为人民币元。category_id、activity_id 必须是下列编号，每笔单独选；活动看不出则选默认。card_id 能对应则填，看不出则 0。
 兑换：amount 与 currency 是卖出，to_amount 与 to_currency 是买入，发生在 card_id 这一张卡上。
@@ -84,18 +83,18 @@ shared 在全家一起时为 true，个人、兑换、转账或看不出时为 f
 1 储蓄 招商银行 日常 1234
 2 信用 中信银行 8888
 
-近期
-2026-09-21 支出 13.61 交通 日常生活 招商银行 日常 1234 打车 个人
-2026-09-20 支出 26.00 餐饮 日常生活 喜茶 共同
-2026-09-01 收入 20000.00 工资 日常生活 个人
+已记备注
+这些已经入账，不要输出，只可模仿用词。
+打车
+喜茶
 `, "\n")
 	if got != want {
 		t.Fatalf("system prompt =\n%s\nwant\n%s", got, want)
 	}
-	if user := buildUserText("", time.Date(2026, 9, 21, 0, 0, 0, 0, time.UTC)); user != "今天是 2026-09-21。" {
+	if user := buildUserText("", time.Date(2026, 9, 21, 0, 0, 0, 0, time.UTC)); user != "只整理这次账单。今天是 2026-09-21。" {
 		t.Fatalf("image user text = %q", user)
 	}
-	if user := buildUserText("喜茶 26 元", time.Date(2026, 9, 21, 0, 0, 0, 0, time.UTC)); user != "今天是 2026-09-21。\n喜茶 26 元" {
+	if user := buildUserText("喜茶 26 元", time.Date(2026, 9, 21, 0, 0, 0, 0, time.UTC)); user != "只整理这次账单。今天是 2026-09-21。\n喜茶 26 元" {
 		t.Fatalf("sms user text = %q", user)
 	}
 }
