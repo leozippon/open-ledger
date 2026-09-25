@@ -733,7 +733,10 @@ function beginRowDrag(card, row, event, onCommit) {
       if (over < from) rows[over].before(row);
       else rows[over].after(row);
     }
-    row.addEventListener('click', (click) => click.stopPropagation(), { capture: true, once: true });
+    card.addEventListener('click', (click) => {
+      click.preventDefault();
+      click.stopImmediatePropagation();
+    }, { capture: true, once: true });
     const nextIds = [...card.querySelectorAll('[data-id]')].map((node) => Number(node.dataset.id));
     if (moved && nextIds.join() !== originIds.join()) onCommit(nextIds);
   };
