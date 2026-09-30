@@ -21,7 +21,7 @@
 
 <p align="center"><img src="docs/screenshots/recognize.png" alt="短信和识图" width="92%"></p>
 
-点开余额，按币种看每张卡还剩多少。
+点开余额，按币种看每张卡还剩多少。本月结余也按币种分开，不把人民币和港币加在一起。
 
 <p align="center"><img src="docs/screenshots/balances.png" alt="余额" width="320"></p>
 

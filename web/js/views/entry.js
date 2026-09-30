@@ -475,8 +475,8 @@ function fromImage(onDone) {
     const picked = input.files?.[0];
     input.remove();
     if (!picked) return;
-    if (picked.size > 2 * 1024 * 1024) {
-      toast('图片不能超过 2 MB', true);
+    if (picked.size > 8 * 1024 * 1024) {
+      toast('图片不能超过 8 MB', true);
       return;
     }
     const reader = new FileReader();

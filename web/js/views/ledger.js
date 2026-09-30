@@ -62,16 +62,18 @@ function searchBody(ctx, found) {
 function summaryCard(ctx) {
   const scoped = ctx.state.statsMember || ctx.state.statsShared;
   const summary = scoped ? (ctx.state.memberSummary ?? ctx.state.summary) : ctx.state.summary;
+  const flows = monthFlows(summary);
+  const main = primaryFlow(flows);
   const grid = el('div', { class: 'summary-grid' }, [
-    summaryCell('支出', money(summary.expense), 'amount-out'),
-    summaryCell('收入', money(summary.income), 'amount-in'),
+    summaryCell('支出', moneyOf(main.expense, main.currency), 'amount-out'),
+    summaryCell('收入', moneyOf(main.income, main.currency), 'amount-in'),
   ]);
   if (scoped) {
-    const net = summary.income - summary.expense;
-    const tone = net > 0 ? 'amount-in' : net < 0 ? 'amount-out' : '';
+    const { tone, text } = netText(main);
     return el('div', { class: 'card summary' }, [
       el('div', { class: 'summary-label', text: '本月结余' }),
-      el('div', { class: `summary-total ${tone}`, text: money(net) }),
+      el('div', { class: `summary-total ${tone}`, text }),
+      extraNets(flows, main),
       grid,
     ]);
   }
@@ -85,7 +87,8 @@ function summaryCard(ctx) {
     ]),
     el('div', { class: 'summary-total', text: mainBalance(summary) }),
     extraBalance(summary),
-    monthNet(summary),
+    monthNet(flows),
+    extraNets(flows, main),
     grid,
   ]);
 }
@@ -131,12 +134,37 @@ function mainBalance(summary) {
   return money(row?.amount ?? summary.balance ?? 0);
 }
 
-function monthNet(summary) {
-  const net = summary.income - summary.expense;
+function monthFlows(summary) {
+  const flows = (summary.currencies || []).filter((item) => item.income || item.expense);
+  if (flows.length) return flows;
+  return [{ currency: 'CNY', income: summary.income || 0, expense: summary.expense || 0 }];
+}
+
+function primaryFlow(flows) {
+  return flows.find((item) => item.currency === 'CNY') || flows[0];
+}
+
+function netText(flow) {
+  const net = flow.income - flow.expense;
   const tone = net > 0 ? 'amount-in' : net < 0 ? 'amount-out' : '';
+  return { tone, text: moneyOf(net, flow.currency) };
+}
+
+function extraNets(flows, main) {
+  const extras = flows.flatMap((item) => {
+    if (item === main) return [];
+    return [`${currencyLabel(item.currency)} ${moneyOf(item.income - item.expense, item.currency)}`];
+  });
+  if (!extras.length) return null;
+  return el('div', { class: 'summary-fx', text: extras.join('　') });
+}
+
+function monthNet(flows) {
+  const main = primaryFlow(flows);
+  const { tone, text } = netText(main);
   return el('div', { class: 'summary-month' }, [
     el('span', { text: '本月结余' }),
-    el('strong', { class: tone, text: money(net) }),
+    el('strong', { class: tone, text }),
   ]);
 }
 
@@ -231,8 +259,9 @@ function activityBoxes(ctx) {
 }
 
 function activityBox(ctx, item) {
-  const net = item.income - item.expense;
-  const tone = net > 0 ? 'amount-in' : net < 0 ? 'amount-out' : '';
+  const flows = activityFlows(item);
+  const main = primaryFlow(flows);
+  const { tone, text } = netText(main);
   return el('div', { class: 'card activity-box' }, [
     el('div', {
       class: 'activity-box-top tappable',
@@ -243,9 +272,10 @@ function activityBox(ctx, item) {
         el('span', { class: 'row-chevron', text: '›' }),
       ]),
       el('div', { class: 'activity-box-meta' }, [
-        el('span', { class: tone, text: `结余 ${money(net)}` }),
-        el('span', { class: 'amount-out', text: `支出 ${money(item.expense)}` }),
+        el('span', { class: tone, text: `结余 ${text}` }),
+        el('span', { class: 'amount-out', text: `支出 ${moneyOf(main.expense, main.currency)}` }),
       ]),
+      extraNets(flows, main),
       activityBudgets(item),
     ]),
     activityPreview(ctx, item),
@@ -337,20 +367,28 @@ function activitySheetBody(ctx, item, list) {
 }
 
 function activitySheetSummary(item) {
-  const net = item.income - item.expense;
-  const tone = net > 0 ? 'amount-in' : net < 0 ? 'amount-out' : '';
+  const flows = activityFlows(item);
+  const main = primaryFlow(flows);
+  const { tone, text } = netText(main);
   const bars = activityBudgets(item);
   return card([
     el('div', { class: 'fx-head' }, [
       el('span', { class: 'fx-code', text: '本月结余' }),
-      el('span', { class: `fx-balance ${tone}`, text: money(net) }),
+      el('span', { class: `fx-balance ${tone}`, text }),
     ]),
+    extraNets(flows, main),
     el('div', { class: 'fx-month' }, [
-      el('span', { class: 'amount-out', text: `支出 ${money(item.expense)}` }),
-      el('span', { class: 'amount-in', text: `收入 ${money(item.income)}` }),
+      el('span', { class: 'amount-out', text: `支出 ${moneyOf(main.expense, main.currency)}` }),
+      el('span', { class: 'amount-in', text: `收入 ${moneyOf(main.income, main.currency)}` }),
     ]),
     bars ? el('div', { class: 'activity-sheet-budget' }, bars) : null,
   ]);
+}
+
+function activityFlows(item) {
+  const flows = (item.flows || []).filter((row) => row.income || row.expense);
+  if (flows.length) return flows;
+  return [{ currency: 'CNY', income: item.income || 0, expense: item.expense || 0 }];
 }
 
 function activityTxs(ctx, id) {
@@ -377,15 +415,22 @@ function entryList(ctx, list, vacant) {
 }
 
 function dayHeader(day) {
-  let expense = 0;
-  let income = 0;
+  const totals = new Map();
   for (const tx of day.items) {
-    if (tx.kind === 'expense') expense += tx.amount;
-    if (tx.kind === 'income') income += tx.amount;
+    if (tx.kind !== 'expense' && tx.kind !== 'income') continue;
+    const code = tx.currency || 'CNY';
+    const row = totals.get(code) || { expense: 0, income: 0 };
+    if (tx.kind === 'expense') row.expense += tx.amount;
+    if (tx.kind === 'income') row.income += tx.amount;
+    totals.set(code, row);
   }
   const sums = [];
-  if (expense > 0) sums.push(el('span', { class: 'amount-out', text: `支出 ${money(expense)}` }));
-  if (income > 0) sums.push(el('span', { class: 'amount-in', text: `收入 ${money(income)}` }));
+  for (const code of ['CNY', 'HKD', 'USD', 'CAD', 'TWD', 'EUR', 'GBP', 'JPY', 'AUD', 'SGD']) {
+    const row = totals.get(code);
+    if (!row) continue;
+    if (row.expense > 0) sums.push(el('span', { class: 'amount-out', text: `支出 ${moneyOf(row.expense, code)}` }));
+    if (row.income > 0) sums.push(el('span', { class: 'amount-in', text: `收入 ${moneyOf(row.income, code)}` }));
+  }
   return el('div', { class: 'day-head' }, [
     el('span', { text: dayLabel(day.date) }),
     sums.length ? el('span', { class: 'day-head-sum' }, sums) : null,

@@ -17,25 +17,26 @@ const (
 
 // Activity is an event envelope around income and expense, orthogonal to category.
 type Activity struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	StartDate    string `json:"start_date"`
-	EndDate      string `json:"end_date"`
-	Budget       int64  `json:"budget"`
-	TotalBudget  int64  `json:"total_budget"`
-	IsDefault    bool   `json:"is_default"`
-	SortOrder    int    `json:"sort_order"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	StartDate   string `json:"start_date"`
+	EndDate     string `json:"end_date"`
+	Budget      int64  `json:"budget"`
+	TotalBudget int64  `json:"total_budget"`
+	IsDefault   bool   `json:"is_default"`
+	SortOrder   int    `json:"sort_order"`
 }
 
 // ActivityMonth is one activity's totals in the selected book and month.
 // Used and TotalUsed are family-wide: the cap sits on the activity, not a book.
 type ActivityMonth struct {
 	Activity
-	Income    int64         `json:"income"`
-	Expense   int64         `json:"expense"`
-	Used      int64         `json:"used"`
-	TotalUsed int64         `json:"total_used"`
-	Recent    []Transaction `json:"recent"`
+	Income    int64          `json:"income"`
+	Expense   int64          `json:"expense"`
+	Used      int64          `json:"used"`
+	TotalUsed int64          `json:"total_used"`
+	Recent    []Transaction  `json:"recent"`
+	Flows     []CurrencyFlow `json:"flows,omitempty"`
 }
 
 // NoteSearch is the matching income and expense for a note keyword, across months.
@@ -250,6 +251,57 @@ func (s *Store) ActivityMonths(month string, userID int64, sharedOnly bool) ([]A
 	for i, item := range out {
 		out[i].Used = used[item.ID]
 		out[i].TotalUsed = totals[item.ID]
+	}
+	flows, err := s.activityFlows(month, userID, sharedOnly)
+	if err != nil {
+		return nil, err
+	}
+	for i, item := range out {
+		out[i].Flows = flows[item.ID]
+	}
+	return out, nil
+}
+
+func (s *Store) activityFlows(month string, userID int64, sharedOnly bool) (map[int64][]CurrencyFlow, error) {
+	from, to := monthRange(month)
+	scope, scopeArgs := txScope("t.", userID, sharedOnly)
+	rows, err := s.db.Query(`
+		SELECT t.activity_id, COALESCE(NULLIF(t.currency, ''), 'CNY'),
+		  COALESCE(SUM(CASE WHEN t.kind = 'income' THEN t.amount END), 0),
+		  COALESCE(SUM(CASE WHEN t.kind = 'expense' THEN t.amount END), 0)
+		FROM transactions t
+		WHERE t.date BETWEEN ? AND ? AND t.kind IN ('income', 'expense')`+scope+`
+		GROUP BY t.activity_id, COALESCE(NULLIF(t.currency, ''), 'CNY')`,
+		append([]any{from, to}, scopeArgs...)...)
+	if err != nil {
+		return nil, fmt.Errorf("activity flows: %w", err)
+	}
+	defer rows.Close()
+	raw := map[int64]map[string]CurrencyFlow{}
+	for rows.Next() {
+		var id int64
+		var code string
+		var income, expense int64
+		if err := rows.Scan(&id, &code, &income, &expense); err != nil {
+			return nil, err
+		}
+		if raw[id] == nil {
+			raw[id] = map[string]CurrencyFlow{}
+		}
+		raw[id][code] = CurrencyFlow{Currency: code, Income: income, Expense: expense}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := map[int64][]CurrencyFlow{}
+	for id, byCode := range raw {
+		flows := []CurrencyFlow{}
+		for _, code := range Currencies {
+			if flow, ok := byCode[code]; ok {
+				flows = append(flows, flow)
+			}
+		}
+		out[id] = flows
 	}
 	return out, nil
 }

@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	recognizeLimit  = 3 << 20
-	recognizeMaxImg = 2 << 20
+	recognizeLimit  = 12 << 20
+	recognizeMaxImg = 8 << 20
 	recognizeRecent = 40
 	deepSeekModel   = "deepseek-flash"
 	deepSeekDefault = "https://api.deepseek.com"
@@ -968,7 +968,7 @@ func normalizeImage(raw string) (string, error) {
 	}
 	// 4/3 is the base64 expansion; reject obviously oversized payloads.
 	if len(data)*3/4 > recognizeMaxImg {
-		return "", fmt.Errorf("图片不能超过 2 MB")
+		return "", fmt.Errorf("图片不能超过 8 MB")
 	}
 	if media == "data:image/jpg" {
 		return "data:image/jpeg;base64," + data, nil
